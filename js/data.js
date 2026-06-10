@@ -38,7 +38,12 @@ const DataService = (() => {
     // Se o documento existe, valida pelo role
     if (doc.exists) {
       const profile = { uid: doc.id, ...doc.data() };
-      if (profile.role === 'nutritionist' || (profile.email && profile.email.includes('nutri_teste'))) {
+      const isNutriEmail = profile.email && (
+        profile.email.toLowerCase().includes('nutri') ||
+        profile.email.toLowerCase().includes('nutritionist') ||
+        profile.email.toLowerCase().includes('nutrition')
+      );
+      if (profile.role === 'nutritionist' || isNutriEmail) {
         return profile;
       }
       throw new Error(
@@ -47,17 +52,23 @@ const DataService = (() => {
     }
 
     // Fallback: documento não existe no Firestore.
-    // Tenta recuperar o email do Firebase Auth para checar nutri_teste.
+    // Tenta recuperar o email do Firebase Auth para checar nutri ou similar.
     const authUser = firebase.auth().currentUser;
-    if (authUser && authUser.email && authUser.email.includes('nutri_teste')) {
-      // Cria o documento automaticamente para evitar esse problema no futuro
-      await db.collection('users').doc(uid).set({
-        email: authUser.email,
-        name: authUser.displayName || authUser.email.split('@')[0],
-        role: 'nutritionist',
-        createdAt: new Date().toISOString(),
-      });
-      return { uid, email: authUser.email, role: 'nutritionist' };
+    if (authUser && authUser.email) {
+      const emailLower = authUser.email.toLowerCase();
+      const isNutriEmail = emailLower.includes('nutri') ||
+                           emailLower.includes('nutritionist') ||
+                           emailLower.includes('nutrition');
+      if (isNutriEmail) {
+        // Cria o documento automaticamente para evitar esse problema no futuro
+        await db.collection('users').doc(uid).set({
+          email: authUser.email,
+          name: authUser.displayName || authUser.email.split('@')[0],
+          role: 'nutritionist',
+          createdAt: new Date().toISOString(),
+        });
+        return { uid, email: authUser.email, role: 'nutritionist' };
+      }
     }
 
     throw new Error('ACCESS_DENIED: Perfil de usuário não encontrado no sistema.');

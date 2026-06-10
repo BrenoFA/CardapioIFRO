@@ -1477,3 +1477,147 @@ a { text-decoration: none; color: inherit; }
   animation: spin 0.8s linear infinite;
   display: inline-block;
 }
+
+/* ============================================================
+   LGPD — MODAL DE CONSENTIMENTO
+   ============================================================ */
+
+/* Sobrepõe todos os outros modais — z-index 9999 no inline */
+.lgpd-modal-overlay.open {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Área de scroll com o texto legal */
+.lgpd-scroll-body {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  margin: 16px 0;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  scroll-behavior: smooth;
+}
+
+.lgpd-scroll-body:focus { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+.lgpd-scroll-body h4 {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 16px 0 6px;
+}
+
+.lgpd-scroll-body h4:first-of-type { margin-top: 0; }
+
+.lgpd-scroll-body p { margin-bottom: 8px; }
+
+/* Linha do checkbox de aceite */
+.lgpd-consent-row {
+  padding: 16px 0 20px;
+  border-top: 1px solid var(--color-border);
+  margin-top: 4px;
+}
+
+.lgpd-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+.lgpd-checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border: 2px solid var(--color-border);
+  border-radius: 4px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+/* Botão de aceite desabilitado */
+#btn-lgpd-accept:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+#btn-lgpd-accept:not(:disabled) {
+  background: var(--color-cta);
+}
+#btn-lgpd-accept:not(:disabled):hover {
+  background: var(--color-cta-dark);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-cta);
+}
+
+/* ============================================================
+   TOAST — VARIANTE 'info' + TOAST COM BOTÃO DESFAZER
+   ============================================================ */
+
+/* Tipo info (azul teal) */
+.toast.info {
+  background: #0891B2;
+  color: white;
+}
+
+/* Toast com botão desfazer — layout flex */
+.toast.toast-with-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 320px;
+  padding: 14px 16px;
+  flex-wrap: wrap;
+}
+
+/* Botão "Desfazer" dentro do toast */
+.toast-undo-btn {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.toast-undo-btn:hover {
+  background: rgba(255,255,255,0.35);
+}
+
+.toast-undo-btn .undo-timer {
+  font-weight: 400;
+  opacity: 0.8;
+  margin-left: 4px;
+}
+
+/* ============================================================
+   MODAL DE CONFIRMAÇÃO DE CÓPIA (modal-copy-confirm)
+   ============================================================ */
+#modal-copy-confirm .modal-title svg {
+  color: var(--color-warning);
+}
+
+#modal-copy-confirm #copy-confirm-body {
+  white-space: pre-line; /* respeita \n inserido via JS */
+}

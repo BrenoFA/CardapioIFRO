@@ -1,0 +1,120 @@
+// ============================================================
+// FIRESTORE SECURITY RULES — Cardápio Escolar IFRO
+// Versão: 1.1 | LGPD-Compliant
+//
+// COMO APLICAR:
+//   1. Acesse https://console.firebase.google.com
+//   2. Firestore Database > Rules
+//   3. Cole o conteúdo abaixo e clique em "Publicar"
+//
+// OU via Firebase CLI:
+//   firebase deploy --only firestore:rules
+// ============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ──────────────────────────────────────────────────────────
+    // FUNÇÕES AUXILIARES
+    // ──────────────────────────────────────────────────────────
+
+    // Verifica se o usuário está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Verifica se o usuário é nutricionista consultando seu perfil
+    // (exige que o documento users/{uid} exista com role = 'nutritionist')
+    function isNutritionist() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'nutritionist';
+    }
+
+    // Verifica se o usuário está acessando seu próprio documento
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // COLEÇÃO: users
+    // LGPD: e-mails e dados pessoais SOMENTE acessíveis pelo
+    // próprio usuário ou durante validação server-side.
+    // Leitura pública bloqueada.
+    // ──────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Leitura: apenas o próprio usuário lê seu perfil
+      allow read: if isOwner(userId);
+
+      // Criação: qualquer autenticado pode criar seu próprio perfil (registro)
+      allow create: if isOwner(userId) &&
+        request.resource.data.keys().hasAll(['email', 'role']) &&
+        request.resource.data.email is string &&
+        request.resource.data.role == 'nutritionist';
+
+      // Atualização: apenas o próprio usuário atualiza seu perfil
+      // (inclui campos como lgpdConsent, lgpdConsentDate)
+      allow update: if isOwner(userId);
+
+      // Exclusão: proibida via client-side (apenas Firebase Console / Admin SDK)
+      allow delete: if false;
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // COLEÇÃO: states
+    // Leitura pública (alunos precisam ver estados).
+    // Escrita restrita a nutricionistas autenticadas.
+    // ──────────────────────────────────────────────────────────
+    match /states/{stateId} {
+      allow read: if true;
+
+      allow create, update: if isNutritionist() &&
+        request.resource.data.keys().hasAll(['name', 'abbr']) &&
+        request.resource.data.name is string &&
+        request.resource.data.abbr is string &&
+        request.resource.data.abbr.size() == 2;
+
+      allow delete: if isNutritionist();
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // COLEÇÃO: campi
+    // Leitura pública (alunos selecionam campus).
+    // Escrita restrita a nutricionistas autenticadas.
+    // ──────────────────────────────────────────────────────────
+    match /campi/{campusId} {
+      allow read: if true;
+
+      allow create, update: if isNutritionist() &&
+        request.resource.data.keys().hasAll(['name', 'stateId']) &&
+        request.resource.data.name is string &&
+        request.resource.data.stateId is string;
+
+      allow delete: if isNutritionist();
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // COLEÇÃO: menus
+    // Leitura pública (alunos consultam cardápio do dia).
+    // Escrita restrita a nutricionistas — valida estrutura básica.
+    // ──────────────────────────────────────────────────────────
+    match /menus/{menuId} {
+      // Qualquer pessoa pode ler cardápios (interface pública dos alunos)
+      allow read: if true;
+
+      // Apenas nutricionistas autenticadas podem criar/editar cardápios
+      allow create, update: if isNutritionist() &&
+        (
+          // Cardápio semanal: deve ter campusId, year, week
+          (request.resource.data.keys().hasAny(['year', 'week', 'campusId'])) ||
+          // Cardápio específico: deve ter date e specific:true
+          (request.resource.data.specific == true && request.resource.data.date is string)
+        );
+
+      // Exclusão: apenas nutricionistas
+      allow delete: if isNutritionist();
+    }
+
+  }
+}

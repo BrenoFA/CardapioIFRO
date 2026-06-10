@@ -25,3 +25,4 @@ const db = firebase.firestore();
 
 // Exporta para uso nos outros módulos
 window.firebaseApp = { auth, db };
+

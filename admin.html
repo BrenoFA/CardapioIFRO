@@ -13,6 +13,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="css/admin.css" />
 
+  <!-- CSS do Chatbot Gemini (isolado) -->
+  <link rel="stylesheet" href="css/chat-bot.css?v=2" />
+
   <!-- Firebase Compat SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -371,7 +374,6 @@
                 <li>Vá em <strong>Estados</strong> e cadastre os estados das suas unidades</li>
                 <li>Vá em <strong>Campi</strong> e adicione os campi dentro de cada estado</li>
                 <li>Vá em <strong>Cardápios</strong>, selecione o campus, a semana e preencha as refeições</li>
-                <li>Os alunos já podem acessar o <strong>Cardápio</strong> pelo aplicativo!</li>
               </ol>
             </div>
           </div>
@@ -864,6 +866,99 @@
     </div>
   </div>
 
+  <!-- =========================================================
+       MODAL: TERMO DE CONSENTIMENTO LGPD
+       Exibido obrigatoriamente no primeiro acesso.
+       Não pode ser dispensado sem aceite explícito.
+  ========================================================== -->
+  <div class="modal-overlay lgpd-modal-overlay" id="modal-lgpd-consent"
+    role="dialog" aria-modal="true" aria-labelledby="lgpd-modal-title"
+    style="display:none; z-index:9999">
+    <div class="modal-box" style="max-width:600px">
+      <div class="modal-title" id="lgpd-modal-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          aria-hidden="true">
+          <rect x="3" y="11" width="18" height="11" rx="2"/>
+          <path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+        Política de Privacidade e LGPD
+      </div>
+
+      <!-- Corpo do texto legal -->
+      <div class="lgpd-scroll-body" tabindex="0" aria-label="Texto da política de privacidade">
+        <p><strong>Cardápio Escolar IFRO — Tratamento de Dados Pessoais</strong></p>
+        <p>Em conformidade com a <strong>Lei Geral de Proteção de Dados (LGPD — Lei nº 13.709/2018)</strong>, informamos:</p>
+
+        <h4>1. Dados Coletados</h4>
+        <p>Coletamos exclusivamente: nome completo, endereço de e-mail institucional e registro de acesso ao sistema (data/hora de login).</p>
+
+        <h4>2. Finalidade</h4>
+        <p>Os dados são utilizados unicamente para autenticação no painel administrativo e gestão de cardápios escolares do IFRO, não sendo compartilhados com terceiros.</p>
+
+        <h4>3. Base Legal</h4>
+        <p>O tratamento ocorre com base no <strong>legítimo interesse institucional</strong> (art. 7º, IX da LGPD) e no cumprimento de obrigação legal pela instituição de ensino.</p>
+
+        <h4>4. Seus Direitos</h4>
+        <p>Você tem direito a: confirmar a existência do tratamento, acessar seus dados, corrigir dados incompletos, solicitar a exclusão e revogar o consentimento a qualquer momento. Para exercer estes direitos, entre em contato com o DPO (Encarregado de Dados) do IFRO.</p>
+
+        <h4>5. Segurança</h4>
+        <p>Os dados são armazenados de forma criptografada no Firebase (Google Cloud) com acesso restrito por autenticação. A sessão é encerrada automaticamente após período de inatividade.</p>
+
+        <h4>6. Retenção</h4>
+        <p>Os dados são mantidos pelo período necessário ao exercício das funções institucionais, podendo ser excluídos mediante solicitação formal.</p>
+
+        <p style="margin-top:16px;color:var(--color-text-muted);font-size:0.82rem">
+          Versão 1.0 — IFRO, 2025. Em caso de dúvidas: <em>privacidade@ifro.edu.br</em>
+        </p>
+      </div>
+
+      <!-- Aceite obrigatório -->
+      <div class="lgpd-consent-row">
+        <label class="lgpd-checkbox-label" for="lgpd-checkbox">
+          <input type="checkbox" id="lgpd-checkbox" aria-required="true">
+          <span>Li e concordo com a Política de Privacidade e com o tratamento dos meus dados conforme descrito acima.</span>
+        </label>
+      </div>
+
+      <div class="modal-footer" style="margin-top:0">
+        <button type="button" class="btn btn-primary" id="btn-lgpd-accept"
+          disabled aria-disabled="true"
+          aria-label="Aceitar termos e continuar para o painel">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            aria-hidden="true">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Aceitar e Continuar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL: CONFIRMAÇÃO DE CÓPIA DE DIA
+       Exibido quando a nutricionista tenta sobrescrever
+       um dia já preenchido via "Copiar Rápido".
+  ========================================================== -->
+  <div class="modal-overlay" id="modal-copy-confirm" role="dialog"
+    aria-modal="true" aria-labelledby="copy-confirm-title" style="display:none">
+    <div class="modal-box" style="max-width:440px">
+      <div class="modal-title" id="copy-confirm-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          aria-hidden="true">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        Atenção: Sobrescrita de Cardápio
+      </div>
+      <p id="copy-confirm-body" style="color:var(--color-text-muted);font-size:0.9rem;margin:12px 0 20px;line-height:1.6"></p>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" id="btn-copy-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="btn-copy-confirm">Sim, sobrescrever</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast (aria-live para leitores de tela) -->
   <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
@@ -871,6 +966,9 @@
   <script src="js/firebase-config.js"></script>
   <script src="js/data.js"></script>
   <script src="js/admin.js"></script>
+
+  <!-- Chatbot Gemini Widget (apenas para nutricionistas) -->
+  <script src="js/chat-bot.js?v=2"></script>
 </body>
 
 </html>

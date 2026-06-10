@@ -16,6 +16,44 @@
   let menuWeek      = null;
   let menuData      = {};
 
+  // ─── TIMEOUT DE SESSÃO ─────────────────────────────────────────
+  // Desloga a nutricionista automaticamente após INACTIVITY_LIMIT ms de inatividade.
+  const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutos
+  let _lastActivity = Date.now();
+  let _timeoutInterval = null;
+
+  function _resetActivityTimer() {
+    _lastActivity = Date.now();
+  }
+
+  function _startSessionTimeout() {
+    _resetActivityTimer();
+    // Escuta eventos de atividade do usuário
+    ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(evt => {
+      document.addEventListener(evt, _resetActivityTimer, { passive: true });
+    });
+    // Verifica inatividade a cada 30 segundos
+    _timeoutInterval = setInterval(async () => {
+      const idleMs = Date.now() - _lastActivity;
+      // Aviso 2 minutos antes do logout
+      if (idleMs >= INACTIVITY_LIMIT_MS - 2 * 60 * 1000 && idleMs < INACTIVITY_LIMIT_MS) {
+        showToast('⚠️ Sessão expirando em 2 minutos por inatividade.', 'warning');
+      }
+      if (idleMs >= INACTIVITY_LIMIT_MS) {
+        _stopSessionTimeout();
+        showToast('Sessão encerrada por inatividade. Faça login novamente.', 'info');
+        await auth.signOut();
+      }
+    }, 30_000);
+  }
+
+  function _stopSessionTimeout() {
+    if (_timeoutInterval) { clearInterval(_timeoutInterval); _timeoutInterval = null; }
+    ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(evt => {
+      document.removeEventListener(evt, _resetActivityTimer);
+    });
+  }
+
   const DAY_KEYS   = ['monday','tuesday','wednesday','thursday','friday'];
   const DAY_LABELS = ['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira'];
   const MEAL_KEYS  = ['morning_break','lunch','afternoon_break','dinner','evening_break'];
@@ -23,7 +61,14 @@
   const MEAL_ICONS = ['🥐','🍽️','🍎','🌙','⭐'];
 
   // ─── HELPERS DE ACESSO ───────────────────────────────────────
-  const isNutritionist = () => userProfile?.role === 'nutritionist' || (currentUser && currentUser.email && currentUser.email.includes('nutri_teste'));
+  const isNutritionist = () => {
+    if (userProfile?.role === 'nutritionist') return true;
+    if (currentUser && currentUser.email) {
+      const email = currentUser.email.toLowerCase();
+      return email.includes('nutri') || email.includes('nutritionist') || email.includes('nutrition');
+    }
+    return false;
+  };
 
   // ─── AUTH ────────────────────────────────────────────────────
   auth.onAuthStateChanged(async user => {
@@ -31,13 +76,79 @@
       currentUser = user;
       // Busca perfil completo (role) antes de renderizar o painel
       userProfile = await DataService.getUserProfile(user.uid);
+
+      // Verifica consentimento LGPD antes de exibir o painel
+      const hasConsent = userProfile?.lgpdConsent === true;
+      if (!hasConsent) {
+        await _showLgpdConsentModal(user.uid);
+        // _showLgpdConsentModal resolve apenas após aceite, então aqui já aceitou
+      }
+
       showPanel(user);
+      _startSessionTimeout();
     } else {
       currentUser = null;
       userProfile = null;
+      _stopSessionTimeout();
       showLogin();
     }
   });
+
+  // ─── LGPD: Modal de Consentimento ─────────────────────────────
+  /**
+   * Exibe o modal LGPD e resolve a Promise somente quando o usuário aceitar.
+   * O modal não pode ser fechado sem aceite.
+   */
+  function _showLgpdConsentModal(uid) {
+    return new Promise(resolve => {
+      const overlay  = document.getElementById('modal-lgpd-consent');
+      const checkbox = document.getElementById('lgpd-checkbox');
+      const acceptBtn= document.getElementById('btn-lgpd-accept');
+      if (!overlay) { resolve(); return; }
+
+      // Mostra o modal (sem usar closeModal para impedir fechamento via Escape)
+      overlay.style.display = 'flex';
+      overlay.classList.add('open');
+
+      // Habilita o botão apenas quando o checkbox estiver marcado
+      checkbox.checked = false;
+      acceptBtn.disabled = true;
+      acceptBtn.setAttribute('aria-disabled', 'true');
+
+      const onCheck = () => {
+        acceptBtn.disabled = !checkbox.checked;
+        acceptBtn.setAttribute('aria-disabled', String(!checkbox.checked));
+      };
+      checkbox.addEventListener('change', onCheck);
+
+      // Ao aceitar: grava no Firestore e fecha o modal
+      const onAccept = async () => {
+        acceptBtn.removeEventListener('click', onAccept);
+        checkbox.removeEventListener('change', onCheck);
+        acceptBtn.innerHTML = `<svg class="spin-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0"/></svg> Salvando...`;
+        acceptBtn.disabled = true;
+        try {
+          await db.collection('users').doc(uid).set({
+            lgpdConsent: true,
+            lgpdConsentDate: new Date().toISOString(),
+            lgpdConsentVersion: '1.0',
+          }, { merge: true });
+        } catch(e) {
+          console.warn('Não foi possível registrar consentimento no Firestore:', e);
+        }
+        overlay.style.display = 'none';
+        overlay.classList.remove('open');
+        resolve();
+      };
+      acceptBtn.addEventListener('click', onAccept);
+
+      // Bloqueia fechamento via Escape enquanto modal LGPD estiver aberto
+      const blockEscape = (e) => {
+        if (e.key === 'Escape') e.stopImmediatePropagation();
+      };
+      overlay.addEventListener('keydown', blockEscape);
+    });
+  }
 
   document.getElementById('login-form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -136,6 +247,9 @@
   function showLogin() {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('admin-panel').style.display  = 'none';
+
+    // Oculta o chatbot na tela de login
+    _applyChatbotVisibility(false);
   }
 
   function showPanel(user) {
@@ -157,6 +271,25 @@
 
     loadDashboard();
     navigateTo('dashboard');
+
+    // Exibe o chatbot se for nutricionista (com retry caso o widget ainda não esteja pronto)
+    _applyChatbotVisibility(isNutritionist(), user.uid);
+  }
+
+  // Controla a visibilidade do chatbot com retry para resolver timing de carregamento
+  function _applyChatbotVisibility(visible, uid = null) {
+    if (window.geminiChatWidget) {
+      if (uid) window.geminiChatWidget.setUserStorageKey(uid);
+      visible ? window.geminiChatWidget.show() : window.geminiChatWidget.hide();
+    } else {
+      // chat-bot.js ainda não terminou de inicializar — tenta novamente em 500ms
+      setTimeout(() => {
+        if (window.geminiChatWidget) {
+          if (uid) window.geminiChatWidget.setUserStorageKey(uid);
+          visible ? window.geminiChatWidget.show() : window.geminiChatWidget.hide();
+        }
+      }, 500);
+    }
   }
 
   /**
@@ -212,7 +345,7 @@
       menus:     'Cardápios',
       campuses:  'Campi',
       states:    'Estados',
-      users:     'Usuários',
+      users:     'Usuários'
     };
     document.getElementById('topbar-title').textContent = titles[view] || 'Admin';
 
@@ -583,6 +716,16 @@
       const el    = document.getElementById(`meal-${dayKey}-${mk}`);
       meals[mk]   = el ? el.value.trim() : '';
     });
+
+    // ── Heurística Nielsen #5: Prevenção de Erros ──────────────
+    // Se TODOS os campos estão em branco, pede confirmação antes de salvar
+    const allBlank = MEAL_KEYS.every(mk => !meals[mk]);
+    if (allBlank) {
+      const dayLabel = DAY_LABELS[DAY_KEYS.indexOf(dayKey)] || dayKey;
+      if (!confirm(`Todos os campos de "${dayLabel}" estão em branco.\nDeseja salvar mesmo assim? Isso apagará o conteúdo existente para este dia.`)) {
+        return;
+      }
+    }
     // Loading state no botão
     const btn = document.getElementById(`btn-save-day-${dayKey}`);
     const SVG_SAVE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`;
@@ -674,20 +817,128 @@
     setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
   };
 
+  /**
+   * Executa a cópia de um dia para outro.
+   * Se o dia de destino já tiver dados, exibe modal de confirmação.
+   * Após cópia, oferece botão "Desfazer" por 10 segundos (Heurística #3).
+   */
   function _doCopyDay(srcKey, targetDayKey) {
-    const srcData  = menuData[srcKey] || {};
-    const allEmpty = MEAL_KEYS.every(mk => !srcData[mk]?.trim());
-    if (allEmpty) {
-      if (!confirm(`"${DAY_LABELS[DAY_KEYS.indexOf(srcKey)]}" não tem refeições. Deseja copiar mesmo assim?`)) return;
-    }
+    const srcData    = menuData[srcKey] || {};
+    const allSrcEmpty= MEAL_KEYS.every(mk => !srcData[mk]?.trim());
+    const targetData = {};
     MEAL_KEYS.forEach(mk => {
       const el = document.getElementById(`meal-${targetDayKey}-${mk}`);
-      if (el) {
-        el.value = srcData[mk] || '';
-        el.dispatchEvent(new Event('input'));
-      }
+      targetData[mk] = el ? el.value : '';
     });
-    showToast(`Refeições de ${DAY_LABELS[DAY_KEYS.indexOf(srcKey)].split(' ')[0]} copiadas! ✨`, 'success');
+    const targetHasData = MEAL_KEYS.some(mk => targetData[mk]?.trim());
+
+    const performCopy = () => {
+      MEAL_KEYS.forEach(mk => {
+        const el = document.getElementById(`meal-${targetDayKey}-${mk}`);
+        if (el) {
+          el.value = srcData[mk] || '';
+          el.dispatchEvent(new Event('input'));
+        }
+      });
+      const srcLabel    = DAY_LABELS[DAY_KEYS.indexOf(srcKey)].split('-')[0];
+      const targetLabel = DAY_LABELS[DAY_KEYS.indexOf(targetDayKey)].split('-')[0];
+      _showUndoCopyToast(targetDayKey, targetData, srcLabel, targetLabel);
+    };
+
+    // Origem vazia: confirma via modal
+    if (allSrcEmpty) {
+      const srcLabel = DAY_LABELS[DAY_KEYS.indexOf(srcKey)];
+      _showCopyConfirmModal(
+        `"${srcLabel}" não tem refeições cadastradas.\nDeseja copiar mesmo assim? Isso limpará o dia de destino.`,
+        performCopy
+      );
+      return;
+    }
+
+    // Destino já preenchido: confirma via modal
+    if (targetHasData) {
+      const srcLabel    = DAY_LABELS[DAY_KEYS.indexOf(srcKey)];
+      const targetLabel = DAY_LABELS[DAY_KEYS.indexOf(targetDayKey)];
+      _showCopyConfirmModal(
+        `"${targetLabel}" já possui refeições cadastradas.\nAo copiar de "${srcLabel}", os dados existentes serão substituídos.\n\nEsta ação poderá ser desfeita logo após.`,
+        performCopy
+      );
+      return;
+    }
+
+    // Sem conflito: copia direto
+    performCopy();
+  }
+
+  /** Exibe o modal de confirmação de cópia e chama onConfirm() se aceito. */
+  function _showCopyConfirmModal(message, onConfirm) {
+    const overlay = document.getElementById('modal-copy-confirm');
+    const bodyEl  = document.getElementById('copy-confirm-body');
+    const cancelBtn = document.getElementById('btn-copy-cancel');
+    const confirmBtn= document.getElementById('btn-copy-confirm');
+    if (!overlay) { if (confirm(message)) onConfirm(); return; }
+
+    bodyEl.textContent = message;
+    overlay.style.display = 'flex';
+    overlay.classList.add('open');
+
+    const cleanup = () => {
+      overlay.style.display = 'none';
+      overlay.classList.remove('open');
+      cancelBtn.removeEventListener('click', onCancel);
+      confirmBtn.removeEventListener('click', onOk);
+    };
+    const onCancel = () => cleanup();
+    const onOk     = () => { cleanup(); onConfirm(); };
+    cancelBtn.addEventListener('click', onCancel);
+    confirmBtn.addEventListener('click', onOk);
+  }
+
+  /**
+   * Exibe um toast com botão "Desfazer" após cópia de dia.
+   * O botão fica ativo por 10 segundos.
+   * Heurística Nielsen #3 — Controle e Liberdade do Usuário.
+   */
+  function _showUndoCopyToast(targetDayKey, previousData, srcLabel, targetLabel) {
+    const container = document.getElementById('toast-container');
+    const toast     = document.createElement('div');
+    toast.className = 'toast success toast-with-undo';
+    toast.setAttribute('role', 'alert');
+
+    let secondsLeft = 10;
+    const render = () => {
+      toast.innerHTML = `
+        <span>✅ Refeições de ${srcLabel} copiadas para ${targetLabel}.</span>
+        <button class="toast-undo-btn" aria-label="Desfazer cópia">
+          Desfazer <span class="undo-timer">(${secondsLeft}s)</span>
+        </button>
+      `;
+      toast.querySelector('.toast-undo-btn').addEventListener('click', () => {
+        // Restaura os dados anteriores nos campos
+        MEAL_KEYS.forEach(mk => {
+          const el = document.getElementById(`meal-${targetDayKey}-${mk}`);
+          if (el) { el.value = previousData[mk] || ''; el.dispatchEvent(new Event('input')); }
+        });
+        clearInterval(countdown);
+        toast.remove();
+        showToast('Cópia desfeita. Dados anteriores restaurados.', 'info');
+      });
+    };
+
+    render();
+    container.appendChild(toast);
+
+    const countdown = setInterval(() => {
+      secondsLeft--;
+      if (secondsLeft <= 0) {
+        clearInterval(countdown);
+        toast.style.animation = 'toast-out 0.3s ease forwards';
+        setTimeout(() => toast.remove(), 300);
+        return;
+      }
+      const timerEl = toast.querySelector('.undo-timer');
+      if (timerEl) timerEl.textContent = `(${secondsLeft}s)`;
+    }, 1000);
   }
 
 
@@ -1025,7 +1276,7 @@
     const toast     = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.setAttribute('role', 'alert');
-    const icons = { success: '✅', error: '❌', warning: '⚠️' };
+    const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
     toast.innerHTML = `${icons[type] || 'ℹ️'} ${_escHtml(msg)}`;
     container.appendChild(toast);
     setTimeout(() => {
@@ -1033,6 +1284,8 @@
       setTimeout(() => toast.remove(), 300);
     }, 3700);
   }
+
+
 
   // ─── UTILS ───────────────────────────────────────────────────
   /** Escapa HTML para prevenir XSS no innerHTML dinâmico */

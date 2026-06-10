@@ -222,7 +222,14 @@
     }
   }
 
+  /**
+   * Renderiza apenas as refeições com conteúdo cadastrado.
+   * Cards vazios ou com texto genérico de "não cadastrado" são
+   * completamente omitidos do DOM (Heurística Nielsen #8 — Estética e
+   * Design Minimalista: não exibir informação irrelevante).
+   */
   function renderMeals(data) {
+    // ── Sem dados para o dia ──────────────────────────────────
     if (!data) {
       mealsGridEl.innerHTML = `
         <div class="empty-state" style="grid-column:1/-1">
@@ -234,8 +241,33 @@
       return;
     }
 
-    mealsGridEl.innerHTML = MEALS.map(meal => {
+    // ── Filtra apenas refeições com conteúdo real ─────────────
+    const EMPTY_PATTERNS = /^(não cadastrado|nao cadastrado|—|-)(\s.*)?$/i;
+
+    const mealsWithContent = MEALS.filter(meal => {
       const content = data[meal.key];
+      if (!content) return false;
+      const trimmed = String(content).trim();
+      if (!trimmed) return false;
+      if (EMPTY_PATTERNS.test(trimmed)) return false;
+      return true;
+    });
+
+    // ── Nenhuma refeição com conteúdo → empty-state ───────────
+    if (!mealsWithContent.length) {
+      mealsGridEl.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1">
+          <div class="empty-icon">🥗</div>
+          <h2>Cardápio não disponível</h2>
+          <p>Nenhuma refeição foi cadastrada para este dia.</p>
+        </div>
+      `;
+      return;
+    }
+
+    // ── Renderiza apenas os cards com conteúdo ────────────────
+    mealsGridEl.innerHTML = mealsWithContent.map(meal => {
+      const content = String(data[meal.key]).trim();
       return `
         <div class="meal-card" data-meal="${meal.key}">
           <div class="meal-card-header">
@@ -247,10 +279,7 @@
             </div>
           </div>
           <div class="meal-card-body">
-            ${content
-              ? `<p class="meal-content">${escapeHtml(content)}</p>`
-              : `<p class="meal-empty-text">Não cadastrado para este dia</p>`
-            }
+            <p class="meal-content">${escapeHtml(content)}</p>
           </div>
         </div>
       `;
