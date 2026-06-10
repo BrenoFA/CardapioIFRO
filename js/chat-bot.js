@@ -10,7 +10,7 @@
 // ============================================================
 
 const GEMINI_CONFIG = {
-    apiKey: "AQ.Ab8RN6KsjRpNwcOR6QAZAhw-PFmXQf-80MtaLcOw6ybjSk9s0Q",
+    apiKey: "DpmI4lemu4fiCF2sd_XFy",
 
     // Modelo será descoberto automaticamente via ListModels (ver _discoverBestModel)
     // Ordem de preferência: melhor qualidade primeiro
