@@ -238,21 +238,34 @@
       document.getElementById('stat-states').textContent = states.length;
       document.getElementById('stat-campi').textContent  = campiSnap.size;
 
-      // Contagem de cardápios desta semana (batch query já existente)
+      // Contagem de dias com cardápio nesta semana (soma em todos os campi)
       const today = new Date();
       const { year, week } = DataService.getISOWeekInfo(today);
-      const weekId = `_${year}_W${String(week).padStart(2,'0')}`;
       const weekSnap = await db.collection('menus')
-        .where(firebase.firestore.FieldPath.documentId(), '>=', '_')
+        .where('year', '==', year)
+        .where('week', '==', week)
         .get();
-      const menuCount = weekSnap.docs.filter(d => d.id.includes(weekId)).length;
-      document.getElementById('stat-menus').textContent = menuCount;
 
+      const DAY_KEYS_DASH = ['monday','tuesday','wednesday','thursday','friday'];
+      let daysWithMenu = 0;
+      weekSnap.docs
+        .filter(d => !d.id.startsWith('specific_'))
+        .forEach(d => {
+          const data = d.data();
+          DAY_KEYS_DASH.forEach(dk => {
+            const day = data[dk];
+            if (day && Object.values(day).some(v => String(v || '').trim())) {
+              daysWithMenu++;
+            }
+          });
+        });
+      document.getElementById('stat-menus').textContent = daysWithMenu;
 
     } catch (e) {
       console.error('Dashboard load error:', e);
     }
   }
+
 
   // ─── ESTADOS ─────────────────────────────────────────────────
   async function loadStatesView() {
@@ -520,15 +533,18 @@
             </div>
           `).join('')}
         </div>
-        <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap">
-          <button class="btn btn-primary" onclick="saveDayMenu('${dayKey}')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            Salvar ${DAY_LABELS[i].split('-')[0]}
+        <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-primary" id="btn-save-day-${dayKey}" onclick="saveDayMenu('${dayKey}')" aria-label="Salvar cardápio de ${DAY_LABELS[i]}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Salvar cardápio do dia
           </button>
-          <button class="btn btn-outline" onclick="copyFromPreviousDay('${dayKey}', ${i})">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-            Copiar do dia anterior
-          </button>
+          <div class="copy-day-wrapper">
+            <button class="btn btn-outline" onclick="openCopyDayDropdown('${dayKey}', this)" aria-label="Copiar cardápio de outro dia da semana" aria-haspopup="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              Copiar cardápio do dia
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
         </div>
       `;
       panelsEl.appendChild(panel);
@@ -549,7 +565,7 @@
       });
     });
 
-    document.getElementById('btn-save-week').style.display = 'inline-flex';
+    // Btn-save-week removido da UI — salvar por dia via saveDayMenu()
 
   }
 
@@ -567,6 +583,11 @@
       const el    = document.getElementById(`meal-${dayKey}-${mk}`);
       meals[mk]   = el ? el.value.trim() : '';
     });
+    // Loading state no botão
+    const btn = document.getElementById(`btn-save-day-${dayKey}`);
+    const SVG_SAVE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`;
+    const SVG_SPIN = `<svg class="spin-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 11-18 0"/></svg>`;
+    if (btn) { btn.innerHTML = `${SVG_SPIN} Salvando...`; btn.disabled = true; }
     try {
       await DataService.saveMenu(menuCampusId, menuYear, menuWeek, dayKey, meals, currentUser.uid);
       menuData[dayKey] = meals;
@@ -574,31 +595,101 @@
       const tab = document.querySelector(`.day-tab[data-day="${dayKey}"]`);
       if (tab) { hasData ? tab.classList.add('has-data') : tab.classList.remove('has-data'); }
       showToast('Cardápio do dia salvo!', 'success');
+      // Atualiza CRUD de semanas e contador do dashboard em segundo plano
+      setTimeout(() => Promise.all([renderWeeksCrud(), loadDashboard()]), 400);
     } catch (e) {
       showToast(e.message?.includes('ACCESS_DENIED') ? 'Sem permissão para salvar cardápios.' : 'Erro ao salvar.', 'error');
+    } finally {
+      if (btn) { btn.innerHTML = `${SVG_SAVE} Salvar cardápio do dia`; btn.disabled = false; }
     }
   };
 
-  window.copyFromPreviousDay = (dayKey, dayIndex) => {
-    if (dayIndex === 0) { showToast('Não há dia anterior na semana.', 'warning'); return; }
-    const prevKey  = DAY_KEYS[dayIndex - 1];
-    const prevData = menuData[prevKey] || {};
+  // ─── COPIAR DIA: abre dropdown para escolher o dia de origem ─────────
+  window.openCopyDayDropdown = (targetDayKey, btnEl) => {
+    // Fecha qualquer dropdown aberto
+    document.querySelectorAll('.copy-day-dropdown').forEach(d => d.classList.remove('open'));
 
-    // Verifica se todas as refeições do dia anterior estão vazias
-    const allEmpty = MEAL_KEYS.every(mk => !prevData[mk]?.trim());
-    if (allEmpty) {
-      if (!confirm('Deseja mesmo copiar um dia sem nenhuma refeição?')) return;
+    const wrapper = btnEl.closest('.copy-day-wrapper');
+    let dropdown  = wrapper.querySelector('.copy-day-dropdown');
+
+    // Cria o dropdown na primeira vez
+    if (!dropdown) {
+      dropdown = document.createElement('div');
+      dropdown.className = 'copy-day-dropdown';
+
+      const label = document.createElement('div');
+      label.className = 'copy-dropdown-label';
+      label.textContent = 'Copiar refeições de:';
+      dropdown.appendChild(label);
+
+      DAY_KEYS.forEach((srcKey, idx) => {
+        const srcData  = menuData[srcKey] || {};
+        const hasData  = MEAL_KEYS.some(mk => srcData[mk]?.trim());
+        const isCurrent = srcKey === targetDayKey;
+
+        const opt = document.createElement('button');
+        opt.type = 'button';
+        opt.className = [
+          'copy-day-option',
+          hasData  ? 'has-data'    : 'empty-day',
+          isCurrent ? 'current-day' : '',
+        ].join(' ').trim();
+
+        opt.innerHTML = `
+          <span class="day-dot"></span>
+          ${DAY_LABELS[idx]}
+          ${hasData ? '<span style="margin-left:auto;font-size:0.72rem;color:var(--color-success)">✓ com dados</span>' : ''}
+          ${isCurrent ? '<span style="margin-left:auto;font-size:0.72rem">(este dia)</span>' : ''}
+        `;
+
+        if (!isCurrent) {
+          opt.addEventListener('click', () => {
+            dropdown.classList.remove('open');
+            _doCopyDay(srcKey, targetDayKey);
+          });
+        }
+        dropdown.appendChild(opt);
+      });
+
+      wrapper.appendChild(dropdown);
+    } else {
+      // Atualiza os dots de has-data ao reabrir
+      dropdown.querySelectorAll('.copy-day-option').forEach((opt, idx) => {
+        const srcKey  = DAY_KEYS[idx];
+        const hasData = MEAL_KEYS.some(mk => (menuData[srcKey] || {})[mk]?.trim());
+        opt.classList.toggle('has-data',  hasData);
+        opt.classList.toggle('empty-day', !hasData && srcKey !== targetDayKey);
+      });
     }
 
+    dropdown.classList.toggle('open');
+
+    // Fecha ao clicar fora
+    const closeHandler = (e) => {
+      if (!wrapper.contains(e.target)) {
+        dropdown.classList.remove('open');
+        document.removeEventListener('click', closeHandler, true);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
+  };
+
+  function _doCopyDay(srcKey, targetDayKey) {
+    const srcData  = menuData[srcKey] || {};
+    const allEmpty = MEAL_KEYS.every(mk => !srcData[mk]?.trim());
+    if (allEmpty) {
+      if (!confirm(`"${DAY_LABELS[DAY_KEYS.indexOf(srcKey)]}" não tem refeições. Deseja copiar mesmo assim?`)) return;
+    }
     MEAL_KEYS.forEach(mk => {
-      const el = document.getElementById(`meal-${dayKey}-${mk}`);
+      const el = document.getElementById(`meal-${targetDayKey}-${mk}`);
       if (el) {
-        el.value = prevData[mk] || '';
-        el.dispatchEvent(new Event('input')); // atualiza char counter e badge
+        el.value = srcData[mk] || '';
+        el.dispatchEvent(new Event('input'));
       }
     });
-    showToast('Dados copiados!', 'success');
-  };
+    showToast(`Refeições de ${DAY_LABELS[DAY_KEYS.indexOf(srcKey)].split(' ')[0]} copiadas! ✨`, 'success');
+  }
+
 
   window.refreshWeekEditor = () => {
     if (!menuCampusId) { showToast('Selecione um campus primeiro.', 'warning'); return; }
@@ -606,35 +697,7 @@
     showToast('Área de preenchimento recarregada.', 'success');
   };
 
-  document.getElementById('btn-save-week').addEventListener('click', async () => {
-    if (!menuCampusId || !isNutritionist()) return;
-    const btn = document.getElementById('btn-save-week');
-    btn.innerHTML = '<svg class="spin-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0"/></svg> Salvando...';
-    btn.disabled  = true;
-    try {
-      for (const dayKey of DAY_KEYS) {
-        const meals = {};
-        MEAL_KEYS.forEach(mk => {
-          const el  = document.getElementById(`meal-${dayKey}-${mk}`);
-          meals[mk] = el ? el.value.trim() : '';
-        });
-        await DataService.saveMenu(menuCampusId, menuYear, menuWeek, dayKey, meals, currentUser.uid);
-        menuData[dayKey] = meals;
-      }
-      DAY_KEYS.forEach(dk => {
-        const data    = menuData[dk] || {};
-        const hasData = Object.values(data).some(v => v);
-        const tab     = document.querySelector(`.day-tab[data-day="${dk}"]`);
-        if (tab) { hasData ? tab.classList.add('has-data') : tab.classList.remove('has-data'); }
-      });
-      showToast('Semana salva com sucesso! ✨', 'success');
-    } catch (e) {
-      showToast(e.message?.includes('ACCESS_DENIED') ? 'Sem permissão para salvar cardápios.' : 'Erro ao salvar semana.', 'error');
-    } finally {
-      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Salvar Semana Toda';
-      btn.disabled  = false;
-    }
-  });
+  // "Salvar Semana Toda" removido — cada dia é salvo individualmente via saveDayMenu()
 
   // ─── CARDÁPIO POR DATA ESPECÍFICA ────────────────────────────
   document.getElementById('btn-specific-date').addEventListener('click', () => {
@@ -867,10 +930,7 @@
     setTimeout(() => loadMenusCrud(), 500);
   }, { capture: false });
 
-  // Recarrega CRUD após salvar semana toda
-  document.getElementById('btn-save-week').addEventListener('click', async () => {
-    setTimeout(() => renderWeeksCrud(), 800);
-  }, { capture: false });
+  // Recarrega CRUD após salvar dia (via saveDayMenu já chama internamente — sem listener adicional necessário)
 
   // ─── USUÁRIOS ────────────────────────────────────────────────
   async function loadUsersView() {
