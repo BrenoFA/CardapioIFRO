@@ -23,16 +23,16 @@
       <div class="header-logo">🍽️</div>
       <div class="header-text">
         <h1>Cardápio Escolar</h1>
-        <p>Consulte o cardápio do seu campus</p>
+        <p>IFRO Campus Ariquemes</p>
       </div>
       <div class="header-badge" id="today-badge">—</div>
     </div>
   </header>
 
   <!-- =========================================================
-       SELEÇÃO DE ESTADO E CAMPUS
+       SELEÇÃO DE ESTADO E CAMPUS (oculto — campus fixo Ariquemes)
   ========================================================== -->
-  <section class="selection-section">
+  <section class="selection-section" style="display:none">
     <div class="selection-inner">
       <div class="selection-title">
         📍 Onde você estuda?
@@ -58,14 +58,12 @@
        NAVEGAÇÃO DE SEMANA
   ========================================================== -->
   <nav class="week-nav" id="week-nav" style="display:none" aria-label="Navegação de semana">
-    <div class="week-nav-header">
-      <div class="week-title" id="week-title">—</div>
-      <div class="week-arrows">
-        <button class="week-arrow-btn" id="btn-prev-week" aria-label="Semana anterior">‹</button>
-        <button class="week-arrow-btn" id="btn-next-week" aria-label="Próxima semana">›</button>
-      </div>
+    <div class="week-title" id="week-title">—</div>
+    <div class="week-nav-row">
+      <button class="week-arrow-btn" id="btn-prev-week" aria-label="Semana anterior">‹</button>
+      <div class="days-strip" id="days-strip" role="tablist"></div>
+      <button class="week-arrow-btn" id="btn-next-week" aria-label="Próxima semana">›</button>
     </div>
-    <div class="days-strip" id="days-strip" role="tablist"></div>
   </nav>
 
   <!-- =========================================================

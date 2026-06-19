@@ -393,13 +393,16 @@ const DataService = (() => {
   }
 
   // ─── SEED INICIAL ────────────────────────────────────────────
+  // IDs fixos: estado = 'rondonia', campus = 'ariquemes'
   async function seedInitialData() {
-    const states = await getStates();
-    if (states.length > 0) return;
-    const stateRef = await db.collection('states').add({ name: 'Rondônia', abbr: 'RO' });
-    await db.collection('campi').add({ name: 'IFRO Campus Ariquemes', stateId: stateRef.id });
-    _invalidateStatesCache();
-    console.log('✅ Dados iniciais inseridos: Rondônia > IFRO Campus Ariquemes');
+    const stateDoc = await db.collection('states').doc('rondonia').get();
+    if (!stateDoc.exists) {
+      await db.collection('states').doc('rondonia').set({ name: 'Rondônia', abbr: 'RO' });
+    }
+    const campusDoc = await db.collection('campi').doc('ariquemes').get();
+    if (!campusDoc.exists) {
+      await db.collection('campi').doc('ariquemes').set({ name: 'IFRO Campus Ariquemes', stateId: 'rondonia' });
+    }
   }
 
   // ─── UTILIDADES DE SEMANA ISO ─────────────────────────────────
@@ -438,6 +441,127 @@ const DataService = (() => {
     });
   }
 
+  // ─── ESTOQUE (INVENTORY) ──────────────────────────────────
+  // Coleção: inventory
+  // Estrutura: { name, category, quantity, unit, minStock, updatedAt, createdAt }
+  //
+  // Categorias e unidades padronizadas para controle de insumos alimentares.
+
+  const INVENTORY_CATEGORIES = [
+    { id: 'graos',      label: 'Grãos e Cereais' },
+    { id: 'proteinas',  label: 'Proteínas' },
+    { id: 'laticinios', label: 'Laticínios' },
+    { id: 'hortifruti', label: 'Hortifrúti' },
+    { id: 'temperos',   label: 'Temperos e Condimentos' },
+    { id: 'bebidas',    label: 'Bebidas' },
+    { id: 'outros',     label: 'Outros' },
+  ];
+
+  const INVENTORY_UNITS = [
+    { id: 'kg',   label: 'Quilograma (kg)' },
+    { id: 'g',    label: 'Grama (g)' },
+    { id: 'L',    label: 'Litro (L)' },
+    { id: 'mL',   label: 'Mililitro (mL)' },
+    { id: 'un',   label: 'Unidade (un)' },
+    { id: 'pct',  label: 'Pacote (pct)' },
+    { id: 'cx',   label: 'Caixa (cx)' },
+    { id: 'lata', label: 'Lata' },
+  ];
+
+  /**
+   * Lista todos os itens do estoque ordenados por nome.
+   * Requer autenticação de nutricionista.
+   * @param {string} uid
+   * @returns {Promise<Array<{id:string, name:string, category:string, quantity:number, unit:string, minStock:number, updatedAt:string, createdAt:string, stockLevel:string}>>}
+   */
+  async function getInventory(uid) {
+    await requireNutritionist(uid);
+    const snap = await db.collection('inventory').orderBy('name').get();
+    return snap.docs.map(d => {
+      const data = d.data();
+      const qty = Number(data.quantity) || 0;
+      const min = Number(data.minStock) || 0;
+      let stockLevel = 'normal';
+      if (qty <= 0) stockLevel = 'critical';
+      else if (qty <= min) stockLevel = 'low';
+      return {
+        id: d.id,
+        name: String(data.name || '').trim(),
+        category: String(data.category || 'outros'),
+        quantity: qty,
+        unit: String(data.unit || 'un'),
+        minStock: min,
+        updatedAt: data.updatedAt || '',
+        createdAt: data.createdAt || '',
+        stockLevel,
+      };
+    });
+  }
+
+  /**
+   * Adiciona um item ao estoque.
+   * @param {{name:string, category:string, quantity:number, unit:string, minStock:number}} item
+   * @param {string} uid
+   */
+  async function addInventoryItem(item, uid) {
+    await requireNutritionist(uid);
+    const cleanName = String(item.name || '').trim();
+    if (!cleanName) throw new Error('VALIDATION: Nome do item é obrigatório.');
+    const qty = Number(item.quantity);
+    if (isNaN(qty) || qty < 0) throw new Error('VALIDATION: Quantidade deve ser um número positivo.');
+    const minStock = Number(item.minStock);
+    if (isNaN(minStock) || minStock < 0) throw new Error('VALIDATION: Estoque mínimo deve ser um número positivo.');
+    const now = new Date().toISOString();
+    return db.collection('inventory').add({
+      name: cleanName,
+      category: String(item.category || 'outros'),
+      quantity: qty,
+      unit: String(item.unit || 'un'),
+      minStock: minStock,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  /**
+   * Atualiza um item do estoque.
+   * @param {string} id
+   * @param {{name?:string, category?:string, quantity?:number, unit?:string, minStock?:number}} data
+   * @param {string} uid
+   */
+  async function updateInventoryItem(id, data, uid) {
+    await requireNutritionist(uid);
+    const updates = { updatedAt: new Date().toISOString() };
+    if (data.name !== undefined) {
+      const cleanName = String(data.name).trim();
+      if (!cleanName) throw new Error('VALIDATION: Nome do item é obrigatório.');
+      updates.name = cleanName;
+    }
+    if (data.category !== undefined) updates.category = String(data.category);
+    if (data.quantity !== undefined) {
+      const qty = Number(data.quantity);
+      if (isNaN(qty) || qty < 0) throw new Error('VALIDATION: Quantidade deve ser um número positivo.');
+      updates.quantity = qty;
+    }
+    if (data.unit !== undefined) updates.unit = String(data.unit);
+    if (data.minStock !== undefined) {
+      const min = Number(data.minStock);
+      if (isNaN(min) || min < 0) throw new Error('VALIDATION: Estoque mínimo deve ser um número positivo.');
+      updates.minStock = min;
+    }
+    return db.collection('inventory').doc(id).update(updates);
+  }
+
+  /**
+   * Remove um item do estoque.
+   * @param {string} id
+   * @param {string} uid
+   */
+  async function deleteInventoryItem(id, uid) {
+    await requireNutritionist(uid);
+    return db.collection('inventory').doc(id).delete();
+  }
+
   // ─── API PÚBLICA ──────────────────────────────────────────────
   return {
     // Acesso
@@ -455,9 +579,13 @@ const DataService = (() => {
     getDayMenuPublic,
     // Alias legado
     getDayMenu,
+    // Estoque
+    getInventory, addInventoryItem, updateInventoryItem, deleteInventoryItem,
+    INVENTORY_CATEGORIES, INVENTORY_UNITS,
     // Utils
     seedInitialData, getISOWeekInfo, getWeekDates,
   };
 })();
 
 window.DataService = DataService;
+

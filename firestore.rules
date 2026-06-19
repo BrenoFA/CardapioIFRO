@@ -1,6 +1,6 @@
 // ============================================================
 // FIRESTORE SECURITY RULES — Cardápio Escolar IFRO
-// Versão: 1.1 | LGPD-Compliant
+// Versão: 1.2 | LGPD-Compliant | Inventory
 //
 // COMO APLICAR:
 //   1. Acesse https://console.firebase.google.com
@@ -114,6 +114,15 @@ service cloud.firestore {
 
       // Exclusão: apenas nutricionistas
       allow delete: if isNutritionist();
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // COLEÇÃO: inventory (Controle de Estoque)
+    // Leitura e escrita restritas a nutricionistas autenticadas.
+    // Gerencia insumos e ingredientes para preparo das refeições.
+    // ──────────────────────────────────────────────────────────
+    match /inventory/{itemId} {
+      allow read, write: if isNutritionist();
     }
 
   }

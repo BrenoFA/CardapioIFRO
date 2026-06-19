@@ -74,63 +74,17 @@
   const MONTH_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
   // ============================================================
-  // INICIALIZAÇÃO
+  // INICIALIZAÇÃO — Campus fixo: IFRO Campus Ariquemes
   // ============================================================
   async function init() {
     await DataService.seedInitialData();
-    await loadStates();
-    renderSelectPrompt();
+    selectedCampusId = 'ariquemes';
+    currentWeekOffset = 0;
+    currentDate = new Date();
+    mainContent.innerHTML = '';
+    renderWeekNav();
+    loadMenuForDate(currentDate);
   }
-
-  // ============================================================
-  // ESTADOS
-  // ============================================================
-  async function loadStates() {
-    stateSelect.innerHTML = '<option value="">Selecione o Estado</option>';
-    const states = await DataService.getStates();
-    states.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = `${s.name} (${s.abbr})`;
-      stateSelect.appendChild(opt);
-    });
-  }
-
-  stateSelect.addEventListener('change', async () => {
-    selectedStateId = stateSelect.value;
-    selectedCampusId = null;
-    campusSelect.innerHTML = '<option value="">Carregando...</option>';
-    campusSelect.disabled = true;
-    renderSelectPrompt();
-
-    if (!selectedStateId) {
-      campusSelect.innerHTML = '<option value="">Selecione o Campus</option>';
-      campusSelect.disabled = true;
-      return;
-    }
-
-    const campi = await DataService.getCampi(selectedStateId);
-    campusSelect.innerHTML = '<option value="">Selecione o Campus</option>';
-    campi.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.id;
-      opt.textContent = c.name;
-      campusSelect.appendChild(opt);
-    });
-    campusSelect.disabled = false;
-  });
-
-  campusSelect.addEventListener('change', () => {
-    selectedCampusId = campusSelect.value;
-    if (selectedCampusId) {
-      currentWeekOffset = 0;
-      currentDate = new Date();
-      renderWeekNav();
-      loadMenuForDate(currentDate);
-    } else {
-      renderSelectPrompt();
-    }
-  });
 
   // ============================================================
   // NAVEGAÇÃO DE SEMANA
@@ -178,17 +132,24 @@
   }
 
   document.getElementById('btn-prev-week').addEventListener('click', () => {
-    currentWeekOffset--;
-    const weekStart = getWeekStart(today, currentWeekOffset);
-    currentDate = weekStart;
+    const prev = new Date(currentDate);
+    prev.setDate(prev.getDate() - 1);
+    currentDate = prev;
+    // Recalcula o offset da semana se mudou de semana
+    const currentWeekStart = getWeekStart(today, currentWeekOffset);
+    if (prev < currentWeekStart) currentWeekOffset--;
     renderWeekNav();
     loadMenuForDate(currentDate);
   });
 
   document.getElementById('btn-next-week').addEventListener('click', () => {
-    currentWeekOffset++;
-    const weekStart = getWeekStart(today, currentWeekOffset);
-    currentDate = weekStart;
+    const next = new Date(currentDate);
+    next.setDate(next.getDate() + 1);
+    currentDate = next;
+    // Recalcula o offset da semana se mudou de semana
+    const currentWeekEnd = new Date(getWeekStart(today, currentWeekOffset));
+    currentWeekEnd.setDate(currentWeekEnd.getDate() + 4);
+    if (next > currentWeekEnd) currentWeekOffset++;
     renderWeekNav();
     loadMenuForDate(currentDate);
   });

@@ -247,9 +247,6 @@
   function showLogin() {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('admin-panel').style.display  = 'none';
-
-    // Oculta o chatbot na tela de login
-    _applyChatbotVisibility(false);
   }
 
   function showPanel(user) {
@@ -271,26 +268,8 @@
 
     loadDashboard();
     navigateTo('dashboard');
-
-    // Exibe o chatbot se for nutricionista (com retry caso o widget ainda não esteja pronto)
-    _applyChatbotVisibility(isNutritionist(), user.uid);
   }
 
-  // Controla a visibilidade do chatbot com retry para resolver timing de carregamento
-  function _applyChatbotVisibility(visible, uid = null) {
-    if (window.geminiChatWidget) {
-      if (uid) window.geminiChatWidget.setUserStorageKey(uid);
-      visible ? window.geminiChatWidget.show() : window.geminiChatWidget.hide();
-    } else {
-      // chat-bot.js ainda não terminou de inicializar — tenta novamente em 500ms
-      setTimeout(() => {
-        if (window.geminiChatWidget) {
-          if (uid) window.geminiChatWidget.setUserStorageKey(uid);
-          visible ? window.geminiChatWidget.show() : window.geminiChatWidget.hide();
-        }
-      }, 500);
-    }
-  }
 
   /**
    * Aplica renderização condicional baseada no cargo (role).
@@ -343,17 +322,19 @@
     const titles = {
       dashboard: 'Dashboard',
       menus:     'Cardápios',
+      inventory: 'Estoque',
       campuses:  'Campi',
       states:    'Estados',
       users:     'Usuários'
     };
     document.getElementById('topbar-title').textContent = titles[view] || 'Admin';
 
-    if (view === 'states')    loadStatesView();
-    if (view === 'campuses')  loadCampusesView();
-    if (view === 'menus')     loadMenusView();
-    if (view === 'dashboard') loadDashboard();
-    if (view === 'users')     loadUsersView();
+    if (view === 'states')     loadStatesView();
+    if (view === 'campuses')   loadCampusesView();
+    if (view === 'menus')      loadMenusView();
+    if (view === 'inventory')  loadInventoryView();
+    if (view === 'dashboard')  loadDashboard();
+    if (view === 'users')      loadUsersView();
   }
 
   // Mobile menu toggle
@@ -393,6 +374,49 @@
           });
         });
       document.getElementById('stat-menus').textContent = daysWithMenu;
+
+      // Contagem de itens no estoque + alertas
+      if (isNutritionist()) {
+        try {
+          const inventoryItems = await DataService.getInventory(currentUser.uid);
+          document.getElementById('stat-inventory').textContent = inventoryItems.length;
+
+          // Alertas de estoque baixo/crítico
+          const alertItems = inventoryItems.filter(i => i.stockLevel === 'low' || i.stockLevel === 'critical');
+          const alertCard = document.getElementById('inventory-alerts-card');
+          const alertBody = document.getElementById('inventory-alerts-body');
+          const badgeEl = document.getElementById('nav-badge-inventory');
+
+          if (alertItems.length > 0) {
+            alertCard.style.display = '';
+            if (badgeEl) { badgeEl.textContent = alertItems.length; badgeEl.style.display = ''; }
+            alertBody.innerHTML = `
+              <div class="inventory-alert-list">
+                ${alertItems.map(item => {
+                  const catLabel = DataService.INVENTORY_CATEGORIES.find(c => c.id === item.category)?.label || item.category;
+                  const statusClass = item.stockLevel === 'critical' ? 'stock-status-critical' : 'stock-status-low';
+                  const statusLabel = item.stockLevel === 'critical' ? 'Crítico' : 'Baixo';
+                  return `<div class="inventory-alert-item">
+                    <div>
+                      <strong>${_escHtml(item.name)}</strong>
+                      <span style="color:var(--color-text-muted);font-size:0.82rem"> — ${_escHtml(catLabel)}</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span style="font-size:0.85rem;font-weight:600">${item.quantity} ${_escHtml(item.unit)}</span>
+                      <span class="stock-status ${statusClass}">${statusLabel}</span>
+                    </div>
+                  </div>`;
+                }).join('')}
+              </div>
+            `;
+          } else {
+            alertCard.style.display = 'none';
+            if (badgeEl) badgeEl.style.display = 'none';
+          }
+        } catch {
+          document.getElementById('stat-inventory').textContent = '—';
+        }
+      }
 
     } catch (e) {
       console.error('Dashboard load error:', e);
@@ -450,14 +474,18 @@
   });
 
   window.deleteState = async (id, name) => {
-    if (!confirm(`Excluir o estado "${name}"? Todos os campi associados serão perdidos.`)) return;
-    try {
-      await DataService.deleteState(id);
-      await Promise.all([loadStatesView(), loadDashboard()]);
-      showToast('Estado excluído.', 'success');
-    } catch {
-      showToast('Erro ao excluir estado.', 'error');
-    }
+    _showDeleteConfirmModal(
+      `Deseja realmente excluir o estado "${name}"? Todos os campi associados serão perdidos.`,
+      async () => {
+        try {
+          await DataService.deleteState(id);
+          await Promise.all([loadStatesView(), loadDashboard()]);
+          showToast('Estado excluído.', 'success');
+        } catch {
+          showToast('Erro ao excluir estado.', 'error');
+        }
+      }
+    );
   };
 
   // ─── CAMPI ───────────────────────────────────────────────────
@@ -525,14 +553,18 @@
   });
 
   window.deleteCampus = async (id, name) => {
-    if (!confirm(`Excluir o campus "${name}"?`)) return;
-    try {
-      await DataService.deleteCampus(id);
-      await Promise.all([loadCampusesView(), loadDashboard()]);
-      showToast('Campus excluído.', 'success');
-    } catch {
-      showToast('Erro ao excluir campus.', 'error');
-    }
+    _showDeleteConfirmModal(
+      `Deseja realmente excluir o campus "${name}"?`,
+      async () => {
+        try {
+          await DataService.deleteCampus(id);
+          await Promise.all([loadCampusesView(), loadDashboard()]);
+          showToast('Campus excluído.', 'success');
+        } catch {
+          showToast('Erro ao excluir campus.', 'error');
+        }
+      }
+    );
   };
 
   // ─── CARDÁPIOS ───────────────────────────────────────────────
@@ -544,34 +576,8 @@
       return;
     }
 
-    const states = await DataService.getStates();
-    const stateSelect  = document.getElementById('menu-state-select');
-    const campusSelect = document.getElementById('menu-campus-select');
-
-    stateSelect.innerHTML = '<option value="">Selecione o Estado</option>' +
-      states.map(s => `<option value="${s.id}">${_escHtml(s.name)}</option>`).join('');
-
-    stateSelect.onchange = async () => {
-      const sid = stateSelect.value;
-      campusSelect.innerHTML = '<option value="">Selecione o Campus</option>';
-      campusSelect.disabled  = true;
-      if (!sid) return;
-      const campi = await DataService.getCampi(sid);
-      campusSelect.innerHTML = '<option value="">Selecione o Campus</option>' +
-        campi.map(c => `<option value="${c.id}">${_escHtml(c.name)}</option>`).join('');
-      campusSelect.disabled = false;
-    };
-
-    campusSelect.onchange = () => {
-      menuCampusId = campusSelect.value;
-      if (menuCampusId) {
-        initWeekEditor();
-        loadMenusCrud();  // Carrega CRUD de cardápios ao selecionar campus
-      } else {
-        document.getElementById('week-editor-section').style.display = 'none';
-        document.getElementById('menus-crud-section').style.display  = 'none';
-      }
-    };
+    // Campus fixo: IFRO Campus Ariquemes
+    menuCampusId = 'ariquemes';
 
     // Semana atual por padrão
     const today = new Date();
@@ -584,8 +590,12 @@
       const [y, w] = e.target.value.split('-W');
       menuYear = parseInt(y);
       menuWeek = parseInt(w);
-      if (menuCampusId) initWeekEditor();
+      initWeekEditor();
     });
+
+    // Inicializa o editor e o CRUD automaticamente
+    initWeekEditor();
+    loadMenusCrud();
   }
 
   async function initWeekEditor() {
@@ -1148,31 +1158,72 @@
   };
 
   /**
+   * Exibe o modal de confirmação de exclusão e chama onConfirm() se aceito.
+   */
+  function _showDeleteConfirmModal(message, onConfirm) {
+    const overlay = document.getElementById('modal-delete-confirm');
+    const bodyEl  = document.getElementById('delete-confirm-body');
+    const cancelBtn = document.getElementById('btn-delete-cancel');
+    const confirmBtn= document.getElementById('btn-delete-confirm');
+    if (!overlay) { if (confirm(message)) onConfirm(); return; }
+
+    bodyEl.textContent = message;
+    openModal('modal-delete-confirm');
+
+    // Remove event listeners antigos clonando os botões
+    const cancelBtnClone = cancelBtn.cloneNode(true);
+    const confirmBtnClone = confirmBtn.cloneNode(true);
+    cancelBtn.parentNode.replaceChild(cancelBtnClone, cancelBtn);
+    confirmBtn.parentNode.replaceChild(confirmBtnClone, confirmBtn);
+
+    const cleanup = () => {
+      closeModal('modal-delete-confirm');
+    };
+
+    cancelBtnClone.addEventListener('click', () => cleanup());
+    confirmBtnClone.addEventListener('click', () => {
+      cleanup();
+      onConfirm();
+    });
+  }
+
+  /**
    * Exclui um cardápio semanal completo.
    */
   window.deleteMenuWeek = async function(docId, week, year) {
-    if (!confirm(`Excluir o cardápio da Semana ${week}/${year} completo? Esta ação não pode ser desfeita.`)) return;
-    try {
-      await DataService.deleteMenu(docId, currentUser.uid);
-      showToast(`Cardápio da Semana ${week}/${year} excluído.`, 'success');
-      await Promise.all([renderWeeksCrud(), loadDashboard()]);
-    } catch (e) {
-      showToast(e.message?.includes('ACCESS_DENIED') ? 'Sem permissão.' : 'Erro ao excluir.', 'error');
-    }
+    _showDeleteConfirmModal(
+      `Deseja realmente excluir o cardápio completo da Semana ${week}/${year}?`,
+      async () => {
+        try {
+          await DataService.deleteMenu(docId, currentUser.uid);
+          showToast(`Cardápio da Semana ${week}/${year} excluído.`, 'success');
+          await Promise.all([renderWeeksCrud(), loadDashboard()]);
+        } catch (e) {
+          showToast(e.message?.includes('ACCESS_DENIED') ? 'Sem permissão.' : 'Erro ao excluir.', 'error');
+        }
+      }
+    );
   };
 
   /**
    * Exclui um cardápio de data específica.
    */
   window.deleteSpecificMenu = async function(docId, dateStr) {
-    if (!confirm(`Excluir o cardápio especial de ${dateStr}?`)) return;
-    try {
-      await DataService.deleteMenu(docId, currentUser.uid);
-      showToast('Cardápio especial excluído.', 'success');
-      await renderSpecificsCrud();
-    } catch (e) {
-      showToast(e.message?.includes('ACCESS_DENIED') ? 'Sem permissão.' : 'Erro ao excluir.', 'error');
-    }
+    const parts = dateStr.split('-');
+    const dateFormatted = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
+
+    _showDeleteConfirmModal(
+      `Deseja realmente excluir o cardápio especial de ${dateFormatted}?`,
+      async () => {
+        try {
+          await DataService.deleteMenu(docId, currentUser.uid);
+          showToast('Cardápio especial excluído.', 'success');
+          await renderSpecificsCrud();
+        } catch (e) {
+          showToast(e.message?.includes('ACCESS_DENIED') ? 'Sem permissão.' : 'Erro ao excluir.', 'error');
+        }
+      }
+    );
   };
 
   // Recarrega CRUD após salvar cardápio especial
@@ -1285,6 +1336,292 @@
     }, 3700);
   }
 
+  // ─── ESTOQUE ─────────────────────────────────────────────────
+  let _inventoryData = [];  // cache local dos itens
+
+  async function loadInventoryView() {
+    if (!isNutritionist()) {
+      showToast('Acesso restrito. Apenas Nutricionistas podem gerenciar o estoque.', 'error');
+      navigateTo('dashboard');
+      return;
+    }
+
+    // Popula selects de categoria nos filtros e no modal
+    _populateInventorySelects();
+
+    // Carrega dados
+    await _renderInventoryTable();
+
+    // Listeners de filtro (remove antigos para evitar duplicação)
+    const searchEl = document.getElementById('inventory-search');
+    const catFilterEl = document.getElementById('inventory-category-filter');
+    const statusFilterEl = document.getElementById('inventory-status-filter');
+
+    const filterHandler = () => _applyInventoryFilters();
+    searchEl.oninput = filterHandler;
+    catFilterEl.onchange = filterHandler;
+    statusFilterEl.onchange = filterHandler;
+  }
+
+  function _populateInventorySelects() {
+    const categories = DataService.INVENTORY_CATEGORIES;
+    const units = DataService.INVENTORY_UNITS;
+
+    // Filtro de categoria
+    const catFilter = document.getElementById('inventory-category-filter');
+    catFilter.innerHTML = '<option value="">Todas as categorias</option>' +
+      categories.map(c => `<option value="${c.id}">${_escHtml(c.label)}</option>`).join('');
+
+    // Modal: categoria
+    const catSelect = document.getElementById('inventory-category');
+    catSelect.innerHTML = '<option value="">Selecione</option>' +
+      categories.map(c => `<option value="${c.id}">${_escHtml(c.label)}</option>`).join('');
+
+    // Modal: unidade
+    const unitSelect = document.getElementById('inventory-unit');
+    unitSelect.innerHTML = '<option value="">Selecione</option>' +
+      units.map(u => `<option value="${u.id}">${_escHtml(u.label)}</option>`).join('');
+  }
+
+  async function _renderInventoryTable() {
+    const tbody = document.getElementById('inventory-table-body');
+    tbody.innerHTML = '<tr><td colspan="6"><div class="spinner"></div></td></tr>';
+    try {
+      _inventoryData = await DataService.getInventory(currentUser.uid);
+      _updateInventoryStats();
+      _applyInventoryFilters();
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="6" style="color:var(--color-error);padding:16px">Erro ao carregar estoque: ${_escHtml(e.message || '')}</td></tr>`;
+    }
+  }
+
+  /**
+   * Atualiza os stat cards e o painel de alertas do estoque.
+   */
+  function _updateInventoryStats() {
+    const total    = _inventoryData.length;
+    const lowItems = _inventoryData.filter(i => i.stockLevel === 'low');
+    const critItems= _inventoryData.filter(i => i.stockLevel === 'critical');
+    const alertItems = [...critItems, ...lowItems]; // críticos primeiro
+
+    // Stats cards
+    document.getElementById('inv-stat-total').textContent    = total;
+    document.getElementById('inv-stat-low').textContent      = lowItems.length;
+    document.getElementById('inv-stat-critical').textContent  = critItems.length;
+
+    // Painel de alertas
+    const panel     = document.getElementById('inv-alerts-panel');
+    const listEl    = document.getElementById('inv-alerts-list');
+    const countBadge= document.getElementById('inv-alerts-count');
+    const categories = DataService.INVENTORY_CATEGORIES;
+    const catMap     = Object.fromEntries(categories.map(c => [c.id, c.label]));
+
+    if (alertItems.length === 0) {
+      panel.style.display = 'none';
+      return;
+    }
+
+    panel.style.display = '';
+    countBadge.textContent = `${alertItems.length} ${alertItems.length === 1 ? 'item' : 'itens'}`;
+
+    listEl.innerHTML = alertItems.map(item => {
+      const catLabel = catMap[item.category] || item.category;
+      const isCritical = item.stockLevel === 'critical';
+      const statusClass = isCritical ? 'stock-status-critical' : 'stock-status-low';
+      const statusLabel = isCritical ? 'Crítico' : 'Baixo';
+      // Barra de progresso: quanto do minStock ainda resta
+      const pct = item.minStock > 0 ? Math.min(100, Math.max(0, (item.quantity / item.minStock) * 100)) : 0;
+      const barColor = isCritical ? '#dc2626' : '#d97706';
+
+      return `<div class="inv-alert-row">
+        <div class="inv-alert-info">
+          <div class="inv-alert-name">
+            <strong>${_escHtml(item.name)}</strong>
+            <span class="stock-status ${statusClass}" style="font-size:0.7rem;padding:2px 8px">${statusLabel}</span>
+          </div>
+          <div class="inv-alert-meta">
+            <span class="badge badge-gray" style="font-size:0.7rem">${_escHtml(catLabel)}</span>
+          </div>
+        </div>
+        <div class="inv-alert-quantity">
+          <div class="inv-alert-bar-wrap">
+            <div class="inv-alert-bar" style="width:${pct}%;background:${barColor}"></div>
+          </div>
+          <div class="inv-alert-nums">
+            <span class="inv-alert-current">${item.quantity} ${_escHtml(item.unit)}</span>
+            <span class="inv-alert-sep">de</span>
+            <span class="inv-alert-min">${item.minStock} ${_escHtml(item.unit)} mín.</span>
+          </div>
+        </div>
+
+      </div>`;
+    }).join('');
+  }
+
+  function _applyInventoryFilters() {
+    const search = (document.getElementById('inventory-search')?.value || '').toLowerCase().trim();
+    const catFilter = document.getElementById('inventory-category-filter')?.value || '';
+    const statusFilter = document.getElementById('inventory-status-filter')?.value || '';
+    const categories = DataService.INVENTORY_CATEGORIES;
+    const catMap = Object.fromEntries(categories.map(c => [c.id, c.label]));
+
+    let filtered = _inventoryData;
+    if (search) filtered = filtered.filter(i => i.name.toLowerCase().includes(search));
+    if (catFilter) filtered = filtered.filter(i => i.category === catFilter);
+    if (statusFilter) filtered = filtered.filter(i => i.stockLevel === statusFilter);
+
+    const tbody = document.getElementById('inventory-table-body');
+    if (!filtered.length) {
+      const msg = _inventoryData.length ? 'Nenhum item encontrado com os filtros aplicados.' : 'Nenhum item no estoque. Clique em "Novo Item" para começar.';
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--color-text-muted);padding:24px">${msg}</td></tr>`;
+      return;
+    }
+
+    const statusConfig = {
+      normal:   { label: 'Normal',  cssClass: 'stock-status-normal' },
+      low:      { label: 'Baixo',   cssClass: 'stock-status-low' },
+      critical: { label: 'Crítico', cssClass: 'stock-status-critical' },
+    };
+
+    tbody.innerHTML = filtered.map(item => {
+      const cat = catMap[item.category] || item.category;
+      const st = statusConfig[item.stockLevel] || statusConfig.normal;
+      return `<tr>
+        <td><strong>${_escHtml(item.name)}</strong></td>
+        <td><span class="badge badge-gray">${_escHtml(cat)}</span></td>
+        <td>
+          <div class="stock-quantity-cell">
+            <span class="stock-quantity-value">${item.quantity}</span>
+            <span class="stock-quantity-unit">${_escHtml(item.unit)}</span>
+          </div>
+        </td>
+        <td style="color:var(--color-text-muted)">${item.minStock} ${_escHtml(item.unit)}</td>
+        <td><span class="stock-status ${st.cssClass}">${st.label}</span></td>
+        <td>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-outline btn-sm" onclick="editInventoryItem('${item.id}')" aria-label="Editar ${_escHtml(item.name)}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Editar
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="deleteInventoryItem('${item.id}','${_escHtml(item.name)}')" aria-label="Excluir ${_escHtml(item.name)}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+              Excluir
+            </button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Abrir modal para novo item
+  document.getElementById('btn-add-inventory').addEventListener('click', () => {
+    if (!isNutritionist()) { showToast('Acesso restrito a Nutricionistas.', 'warning'); return; }
+    document.getElementById('inventory-edit-id').value = '';
+    document.getElementById('form-inventory').reset();
+    document.getElementById('modal-inventory-title-text').textContent = 'Novo Item';
+    document.getElementById('btn-inventory-submit').textContent = 'Adicionar';
+    _populateInventorySelects();
+    openModal('modal-inventory');
+  });
+
+  // Editar item existente
+  window.editInventoryItem = function(id) {
+    const item = _inventoryData.find(i => i.id === id);
+    if (!item) { showToast('Item não encontrado.', 'error'); return; }
+    _populateInventorySelects();
+    document.getElementById('inventory-edit-id').value = id;
+    document.getElementById('inventory-name').value = item.name;
+    document.getElementById('inventory-category').value = item.category;
+    document.getElementById('inventory-unit').value = item.unit;
+    document.getElementById('inventory-quantity').value = item.quantity;
+    document.getElementById('inventory-min-stock').value = item.minStock;
+    document.getElementById('modal-inventory-title-text').textContent = 'Editar Item';
+    document.getElementById('btn-inventory-submit').textContent = 'Salvar';
+    openModal('modal-inventory');
+  };
+
+  // Salvar (criar ou atualizar)
+  document.getElementById('form-inventory').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!isNutritionist()) { showToast('Sem permissão.', 'error'); return; }
+    const editId = document.getElementById('inventory-edit-id').value;
+    const itemData = {
+      name:     document.getElementById('inventory-name').value.trim(),
+      category: document.getElementById('inventory-category').value,
+      unit:     document.getElementById('inventory-unit').value,
+      quantity: parseFloat(document.getElementById('inventory-quantity').value) || 0,
+      minStock: parseFloat(document.getElementById('inventory-min-stock').value) || 0,
+    };
+
+    const btn = document.getElementById('btn-inventory-submit');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+
+    try {
+      if (editId) {
+        await DataService.updateInventoryItem(editId, itemData, currentUser.uid);
+        showToast('Item atualizado com sucesso!', 'success');
+      } else {
+        await DataService.addInventoryItem(itemData, currentUser.uid);
+        showToast('Item adicionado ao estoque!', 'success');
+      }
+      closeModal('modal-inventory');
+      document.getElementById('form-inventory').reset();
+      await _renderInventoryTable();
+      // Atualiza dashboard em background
+      setTimeout(() => loadDashboard(), 300);
+    } catch (err) {
+      showToast(err.message?.replace('VALIDATION: ', '') || 'Erro ao salvar item.', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
+
+  // Excluir item
+  window.deleteInventoryItem = async function(id, name) {
+    _showDeleteConfirmModal(
+      `Deseja realmente excluir o item "${name}" do estoque?`,
+      async () => {
+        try {
+          await DataService.deleteInventoryItem(id, currentUser.uid);
+          showToast('Item excluído do estoque.', 'success');
+          await _renderInventoryTable();
+          setTimeout(() => loadDashboard(), 300);
+        } catch {
+          showToast('Erro ao excluir item.', 'error');
+        }
+      }
+    );
+  };
+
+  // Editar apenas o estoque mínimo (atalho rápido do painel de alertas)
+  window.editInventoryMinStock = async function(id) {
+    const item = _inventoryData.find(i => i.id === id);
+    if (!item) { showToast('Item não encontrado.', 'error'); return; }
+    const newMin = prompt(
+      `Definir quantidade mínima de alerta para "${item.name}":\n\n` +
+      `Quantidade atual: ${item.quantity} ${item.unit}\n` +
+      `Mínimo atual: ${item.minStock} ${item.unit}\n\n` +
+      `Quando a quantidade ficar igual ou abaixo deste valor, um alerta será exibido.`,
+      String(item.minStock)
+    );
+    if (newMin === null) return; // cancelou
+    const parsed = parseFloat(newMin);
+    if (isNaN(parsed) || parsed < 0) {
+      showToast('Valor inválido. Informe um número positivo.', 'error');
+      return;
+    }
+    try {
+      await DataService.updateInventoryItem(id, { minStock: parsed }, currentUser.uid);
+      showToast(`Mínimo de "${item.name}" atualizado para ${parsed} ${item.unit}.`, 'success');
+      await _renderInventoryTable();
+      setTimeout(() => loadDashboard(), 300);
+    } catch (err) {
+      showToast(err.message?.replace('VALIDATION: ', '') || 'Erro ao atualizar.', 'error');
+    }
+  };
 
 
   // ─── UTILS ───────────────────────────────────────────────────

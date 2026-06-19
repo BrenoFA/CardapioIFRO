@@ -10,20 +10,21 @@ Este documento serve como um guia completo para a apresentação do projeto **Ca
 * **Integrantes da equipe:** [Nome 1], [Nome 2], [Nome 3] *(preencha com os nomes)*
 * **Problema identificado:** Falta de um meio centralizado, moderno e de fácil atualização para que alunos consultem as refeições diárias do IFRO, e a necessidade de um sistema eficiente e rápido para a gestão de cardápios por parte das nutricionistas.
 * **Público-alvo:** Alunos do Instituto Federal de Rondônia (IFRO) e profissionais de Nutrição da instituição.
-* **Proposta de valor:** Fornecer um portal web rápido e intuitivo para alunos consultarem cardápios atualizados, e um painel administrativo seguro, moderno e com suporte de Inteligência Artificial para otimizar o trabalho das nutricionistas na gestão das refeições.
+* **Proposta de valor:** Fornecer um portal web rápido e intuitivo para alunos consultarem cardápios atualizados, e um painel administrativo seguro e moderno para otimizar o trabalho das nutricionistas na gestão das refeições e controle de estoque.
 * **Requisitos funcionais:** 
   * Visualização pública de cardápios diários com navegação semanal.
   * Seleção dinâmica de Estados e Campi.
   * Autenticação segura (login/recuperação de senha) para Nutricionistas.
   * Painel Administrativo com CRUD para Estados, Campi e Cardápios (semanais e específicos/exceções).
-  * Assistente virtual IA (chatbot) integrado no painel da nutricionista.
+  * Controle de Estoque de insumos alimentares com alertas de nível baixo/crítico.
+  * Termo de consentimento LGPD obrigatório no primeiro acesso.
 * **Requisitos não funcionais:**
   * Interface responsiva, amigável e com experiência do usuário (UX) focada em performance (ex: *skeleton screens*).
   * Arquitetura *Serverless* executada diretamente no navegador usando CDN.
   * Alta disponibilidade e segurança com validação de regras diretamente no banco de dados (Firestore Rules).
-* **Modelagem da solução:** Banco de dados em nuvem NoSQL orientado a documentos (Firestore) dividido em 4 coleções principais: `states` (estados), `campi` (unidades), `menus` (cardápios) e `users` (nutricionistas).
-* **Tecnologias utilizadas:** HTML5, CSS3, JavaScript Vanilla, Firebase SDK (Authentication e Cloud Firestore) e Google Gemini AI (API).
-* **Descrição do uso de IA:** O projeto inclui um assistente virtual inovador (*Gemini Chat Widget*) no painel administrativo. A IA atua exclusivamente como uma "Assistente de Nutrição Escolar do IFRO", respondendo a dúvidas técnicas das nutricionistas sobre elaboração de receitas, valores nutricionais e controle de alergias alimentares.
+  * Conformidade com a Lei Geral de Proteção de Dados (LGPD — Lei nº 13.709/2018).
+* **Modelagem da solução:** Banco de dados em nuvem NoSQL orientado a documentos (Firestore) dividido em 5 coleções principais: `states` (estados), `campi` (unidades), `menus` (cardápios), `users` (nutricionistas) e `inventory` (estoque de insumos).
+* **Tecnologias utilizadas:** HTML5, CSS3, JavaScript Vanilla e Firebase SDK (Authentication e Cloud Firestore).
 * **Prints ou link do protótipo:** [Insira aqui o link do sistema ou cole prints das telas]
 * **Estratégia de validação:** [Descreva aqui a estratégia de testes, ex: validação manual com base em simulação de acessos, etc.]
 * **Resultados obtidos:** [Descreva os resultados, ex: sistema 100% responsivo e funcional entregue com sucesso.]
@@ -41,8 +42,7 @@ O código-fonte do projeto está **completo, bem estruturado e pronto para apres
 4. **Resiliência de Contas (`requireNutritionist`):** Se uma conta for criada manualmente no painel do Firebase Auth com email contendo a palavra "nutri" (ex: `nutricionista@ifro.edu.br`), mas o documento correspondente na coleção `/users` do Firestore ainda não tiver sido criado, o sistema cria o perfil automaticamente no primeiro login, evitando erros inesperados durante a exibição.
 
 ### ⚠️ Atenção: Itens Críticos para Revisar Antes da Apresentação!
-1. **Chave de API do Gemini (`js/chat-bot.js`):** A chave configurada (`AQ.Ab8RN6...`) possui formato incorreto/inválido (chaves do Google AI Studio tipicamente iniciam com `AIzaSy`). **Você deve gerar uma chave válida no [Google AI Studio](https://aistudio.google.com/) e substituí-la na linha 9 do arquivo `js/chat-bot.js`** para que o assistente virtual funcione em tempo real.
-2. **Configuração e Ativação do Firebase Console:** Certifique-se de que o provedor **E-mail/Senha** está ativo em *Authentication → Sign-in method* e que as regras de segurança no Firestore foram publicadas, conforme descrito na seção de configuração abaixo.
+1. **Configuração e Ativação do Firebase Console:** Certifique-se de que o provedor **E-mail/Senha** está ativo em *Authentication → Sign-in method* e que as regras de segurança no Firestore foram publicadas, conforme descrito na seção de configuração abaixo.
 
 ---
 
@@ -54,7 +54,6 @@ A aplicação está dividida de forma modular:
 *   `admin.html` e `js/admin.js`: Interface administrativa protegida para nutricionistas.
 *   `js/data.js`: Camada de acesso a dados (Service) que centraliza todas as operações com o Firestore.
 *   `js/firebase-config.js`: Centraliza a inicialização da conexão com os serviços do Firebase.
-*   `js/chat-bot.js` e `css/chat-bot.css`: Widget inteligente autônomo com IA integrado ao painel admin.
 *   `css/style.css` e `css/admin.css`: Estilização vanilla moderna com transições suaves e design adaptável (responsivo).
 
 ---
@@ -105,19 +104,24 @@ Módulo seguro e exclusivo que permite gerenciar toda a estrutura e as refeiçõ
     *   Opções diretas para **Editar** ou **Excluir** cardápios inteiros.
 *   **Cadastro de Nutricionistas:**
     *   Cadastro de novas nutricionistas diretamente pelo painel. O sistema cria a conta no Firebase Auth e vincula o perfil com a função `role: "nutritionist"` no Firestore.
+*   **Termo de Consentimento LGPD:**
+    *   Modal obrigatório de Política de Privacidade exibido no primeiro acesso, com texto legal e aceite explícito via checkbox.
 
-### 3.3. Assistente de Nutrição IA (Gemini Chat Widget)
-Um diferencial inovador que enriquece a apresentação e demonstra a integração prática com Inteligência Artificial:
-*   **Visualização Contextual:** O widget flutuante só é exibido na tela para nutricionistas devidamente autenticadas (oculto na tela de login).
-*   **Personalidade Customizada:** Configurado com instruções de sistema para agir estritamente como uma *Assistente de Nutrição Escolar do IFRO*, respondendo dúvidas sobre receitas, valores nutricionais, alergias, boas práticas alimentares escolares e elaboração de cardápios.
-*   **Conversação Avançada:** Mantém o histórico da conversa na sessão, permitindo que a nutricionista faça perguntas consecutivas dentro de um contexto contínuo.
-*   **Elementos Visuais Dinâmicos:** Indicador de digitação animado (*typing indicator*), balões de fala estilizados e rolagem automática ao enviar/receber respostas.
+### 3.4. Controle de Estoque (Módulo `inventory`)
+Módulo dedicado ao gerenciamento de insumos alimentares da instituição:
+*   **CRUD completo:** Adicionar, editar e excluir itens do estoque com nome, categoria, unidade, quantidade atual e estoque mínimo.
+*   **Categorias padronizadas:** Grãos e Cereais, Proteínas, Laticínios, Hortifrúti, Temperos e Condimentos, Bebidas, Outros.
+*   **Classificação automática:** Status `Normal`, `Baixo` ou `Crítico` calculado automaticamente com base na quantidade atual vs. estoque mínimo.
+*   **Painel de alertas:** Notificação visual dos itens com estoque baixo ou crítico, funcionando como aviso simples sem botões de edição.
+*   **Filtros avançados:** Busca textual por nome, filtro por categoria e filtro por status.
+*   **Cards de estatísticas:** Total de itens, quantidade em estoque baixo e em estoque crítico.
+
 
 ---
 
 ## 🗄️ 4. Estrutura e Modelagem do Banco de Dados (Firestore)
 
-Os dados estão estruturados no Cloud Firestore em 4 coleções principais:
+Os dados estão estruturados no Cloud Firestore em 5 coleções principais:
 
 ### 1. Coleção `states` (Estados)
 *   **ID do Documento:** Gerado automaticamente pelo Firestore.
@@ -190,16 +194,32 @@ Esta coleção armazena tanto o planejamento semanal quanto as exceções diári
     }
     ```
 
+### 5. Coleção `inventory` (Estoque de Insumos)
+*   **ID do Documento:** Gerado automaticamente pelo Firestore.
+*   **Estrutura do Documento:**
+    ```json
+    {
+      "name": "Arroz Tipo 1",
+      "category": "graos",
+      "quantity": 50,
+      "unit": "kg",
+      "minStock": 20,
+      "createdAt": "2026-06-15T10:00:00.000Z",
+      "updatedAt": "2026-06-18T14:30:00.000Z"
+    }
+    ```
+*   **Categorias válidas:** `graos`, `proteinas`, `laticinios`, `hortifruti`, `temperos`, `bebidas`, `outros`.
+*   **Unidades válidas:** `kg`, `g`, `L`, `mL`, `un`, `pct`, `cx`, `lata`.
+
 ---
 
 ## 🚦 5. Checklist de Preparação para a Apresentação
 
 Antes de iniciar a apresentação perante a banca ou professor, siga estes passos para garantir que tudo funcione de forma impecável:
 
-1.  [ ] **Insira uma API Key do Gemini Válida:** No arquivo [chat-bot.js](file:///c:/Users/LidioStorch/Desktop/ESTRUTURA%20DE%20DADOS/school-menu-main/school-menu-main/js/chat-bot.js#L9), substitua o valor de `apiKey` por uma chave de teste criada no [Google AI Studio](https://aistudio.google.com/).
-2.  [ ] **Habilite a Autenticação no Firebase:** Vá no console do Firebase, entre na seção **Authentication**, clique em **Sign-in method** e ative o provedor **E-mail/Senha**.
-3.  [ ] **Cadastre o Primeiro Usuário:** Na aba **Users** do Authentication do Firebase, clique em **Add user** e crie uma conta com email contendo a palavra `nutri` (ex: `nutri.apresentacao@ifro.edu.br`) e defina uma senha de sua preferência. Isso permitirá que você faça login no painel de administração imediatamente.
-4.  [ ] **Aplique as Regras de Segurança do Firestore:** No console do Firebase, acesse **Firestore Database** -> aba **Regras** e publique as regras abaixo para garantir a segurança dos dados e evitar o bloqueio após 30 dias de teste:
+1.  [ ] **Habilite a Autenticação no Firebase:** Vá no console do Firebase, entre na seção **Authentication**, clique em **Sign-in method** e ative o provedor **E-mail/Senha**.
+2.  [ ] **Cadastre o Primeiro Usuário:** Na aba **Users** do Authentication do Firebase, clique em **Add user** e crie uma conta com email contendo a palavra `nutri` (ex: `nutri.apresentacao@ifro.edu.br`) e defina uma senha de sua preferência. Isso permitirá que você faça login no painel de administração imediatamente.
+3.  [ ] **Aplique as Regras de Segurança do Firestore:** No console do Firebase, acesse **Firestore Database** -> aba **Regras** e publique as regras abaixo para garantir a segurança dos dados e evitar o bloqueio após 30 dias de teste:
     ```javascript
     rules_version = '2';
     service cloud.firestore {
@@ -219,10 +239,64 @@ Antes de iniciar a apresentação perante a banca ou professor, siga estes passo
         match /users/{id} {
           allow read, write: if request.auth != null;
         }
+        match /inventory/{id} {
+          allow read, write: if request.auth != null;
+        }
       }
     }
     ```
-5.  [ ] **Inicie o Servidor Local:** Abra a pasta do projeto no VS Code e inicie com a extensão **Live Server** ou via linha de comando utilizando o `live-server` para carregar as páginas perfeitamente e evitar problemas de políticas de CORS do navegador.
+4.  [ ] **Inicie o Servidor Local:** Abra a pasta do projeto no VS Code e inicie com a extensão **Live Server** ou via linha de comando utilizando o `live-server` para carregar as páginas perfeitamente e evitar problemas de políticas de CORS do navegador.
+
+---
+
+## 📝 6. Resumo das Alterações Realizadas
+
+Abaixo está o histórico de modificações feitas no projeto desde a versão original, organizadas por módulo:
+
+### 6.1. Novo Módulo: Controle de Estoque (`inventory`)
+*   **Aba dedicada no Painel Admin:** Nova seção "Estoque" no menu lateral, com ícone e navegação integrada.
+*   **CRUD completo de itens:** Adicionar, editar e excluir insumos alimentares (ex: arroz, feijão, leite). Cada item possui:
+    *   Nome, Categoria (Grãos e Cereais, Proteínas, Laticínios, Hortifrúti, Temperos, Bebidas, Outros), Unidade de medida (kg, g, L, mL, un, pct, cx, lata), Quantidade atual e Estoque mínimo.
+*   **Classificação automática de status:** Cada item é classificado como `Normal`, `Baixo` (quantidade ≤ mínimo) ou `Crítico` (quantidade = 0), com badges coloridos.
+*   **Painel de alertas "Itens para Acabar":** Exibido automaticamente quando existem itens com estoque baixo ou crítico. Mostra nome, categoria, barra de progresso visual e valores atuais vs. mínimos. **Os botões de edição foram removidos deste painel para que funcione exclusivamente como aviso simples de notificação à nutricionista.**
+*   **Filtros avançados:** Busca por nome, filtro por categoria e filtro por status do estoque.
+*   **Stats cards:** Exibe total de itens, quantidade em estoque baixo e quantidade em estoque crítico.
+*   **Coleção Firestore:** Nova coleção `inventory` com estrutura:
+    ```json
+    {
+      "name": "Arroz Tipo 1",
+      "category": "graos",
+      "quantity": 50,
+      "unit": "kg",
+      "minStock": 20,
+      "createdAt": "2026-06-15T10:00:00.000Z",
+      "updatedAt": "2026-06-18T14:30:00.000Z"
+    }
+    ```
+
+### 6.2. Dashboard Aprimorado
+*   **Novo stat card "Itens no Estoque":** Exibe a contagem total de itens cadastrados no estoque diretamente no Dashboard.
+*   **Card de Alertas de Estoque no Dashboard:** Um card de alerta é exibido no Dashboard quando há itens com estoque baixo ou crítico, permitindo que a nutricionista veja os avisos sem precisar navegar até a aba de Estoque.
+*   **Acesso Rápido expandido:** Novo botão "Controle de Estoque" no grid de acesso rápido do Dashboard.
+
+### 6.3. Conformidade LGPD
+*   **Modal de Termo de Consentimento:** Implementado modal obrigatório de Política de Privacidade e LGPD (Lei nº 13.709/2018), exibido no primeiro acesso da nutricionista. O aceite é obrigatório (checkbox + botão "Aceitar e Continuar"), impedindo o uso do sistema sem consentimento explícito.
+*   **Conteúdo do termo:** Inclui seções sobre Dados Coletados, Finalidade, Base Legal, Direitos do Titular, Segurança e Retenção de dados.
+
+### 6.4. Melhorias de UX no Editor de Cardápios
+*   **Modal de confirmação de cópia:** Ao usar o recurso "Copiar Rápido" para sobrescrever um dia já preenchido, um modal de confirmação é exibido antes de sobrescrever os dados.
+*   **Modal de confirmação de exclusão:** Ao excluir cardápios (semanais ou específicos), um modal de confirmação é exibido, evitando exclusões acidentais.
+*   **Toast com botão "Desfazer":** Após copiar refeições de um dia para outro, um toast com botão de desfazer (ativo por 10 segundos) permite reverter a operação imediatamente (princípio de Controle e Liberdade do Usuário — Nielsen #3).
+
+### 6.5. Alterações Pontuais
+*   **Painel de Alertas de Estoque (aba Estoque):** Removidos os botões "Mín." e "Editar" do painel de alertas de itens para acabar. O painel agora funciona apenas como aviso simples de notificação, sem ações inline. A edição dos itens continua disponível pela tabela principal do estoque.
+*   **Regras de segurança do Firestore:** Devem incluir a nova coleção `inventory`:
+    ```javascript
+    match /inventory/{id} {
+      allow read, write: if request.auth != null;
+    }
+    ```
 
 ---
 *Este documento foi gerado para auxiliar na apresentação do projeto de Estrutura de Dados do Cardápio Escolar IFRO. Bons estudos e excelente apresentação! 🍽️*
+
