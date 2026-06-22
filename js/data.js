@@ -562,7 +562,318 @@ const DataService = (() => {
     return db.collection('inventory').doc(id).delete();
   }
 
-  // ─── API PÚBLICA ──────────────────────────────────────────────
+  // ─── SALVAR CARDÁPIO COM DESCONTO AUTOMÁTICO DE ESTOQUE ───────
+  // Utiliza runTransaction do Firestore para garantir atomicidade:
+  //   1. Lê o estoque atual de cada ingrediente DENTRO da transação
+  //   2. Valida se há quantidade suficiente para cada ingrediente
+  //   3. Se tudo OK: salva o cardápio na coleção 'cardapios' e atualiza o estoque
+  //   4. Se qualquer ingrediente for insuficiente: aborta TUDO (nenhuma escrita é feita)
+  //
+  // Estrutura esperada do parâmetro 'dadosCardapio':
+  //   {
+  //     refeicao: 'Almoço',
+  //     descricao: 'Arroz, feijão, frango grelhado, salada',
+  //     data: '2026-06-22',
+  //     ingredientes_usados: [
+  //       { id_estoque: 'ID_DO_DOC_NO_INVENTORY', qtd_gasta: 2.5 },
+  //       { id_estoque: 'OUTRO_ID',               qtd_gasta: 1.0 },
+  //     ]
+  //   }
+  //
+  // A coleção de estoque usada é 'inventory' (a mesma já existente no sistema).
+  // O cardápio é salvo na coleção 'cardapios' (separada dos 'menus' semanais).
+
+  /**
+   * Salva um cardápio diário e desconta automaticamente os ingredientes do estoque.
+   * Operação atômica via Firestore runTransaction — tudo ou nada.
+   *
+   * @param {object} dadosCardapio - Objeto com refeicao, descricao, data e ingredientes_usados
+   * @param {string} uid - UID do usuário logado (deve ser nutricionista)
+   * @returns {Promise<void>}
+   * @throws {Error} Se estoque insuficiente ou usuário não autorizado
+   */
+  async function salvarCardapioComDesconto(dadosCardapio, uid) {
+    // 1. Verifica permissão: apenas nutricionistas podem executar esta operação
+    await requireNutritionist(uid);
+
+    // 2. Validação básica dos dados de entrada
+    if (!dadosCardapio || !dadosCardapio.refeicao) {
+      throw new Error('VALIDATION: O campo "refeicao" é obrigatório.');
+    }
+    if (!Array.isArray(dadosCardapio.ingredientes_usados) || dadosCardapio.ingredientes_usados.length === 0) {
+      throw new Error('VALIDATION: É necessário informar ao menos um ingrediente usado.');
+    }
+
+    // 3. Executa a transação atômica no Firestore
+    await db.runTransaction(async (transaction) => {
+
+      // ─── FASE DE LEITURA ─────────────────────────────────────
+      // Lê TODOS os documentos de estoque necessários ANTES de qualquer escrita.
+      // Isso é obrigatório no runTransaction do Firestore.
+      const leituras = [];
+
+      for (const ingrediente of dadosCardapio.ingredientes_usados) {
+        // Referência ao documento do ingrediente na coleção 'inventory'
+        const estoqueRef = db.collection('inventory').doc(ingrediente.id_estoque);
+
+        // Lê o documento atual dentro da transação (garante consistência)
+        const estoqueDoc = await transaction.get(estoqueRef);
+
+        // Verifica se o documento do ingrediente existe no banco
+        if (!estoqueDoc.exists) {
+          throw new Error(
+            `Ingrediente não encontrado no estoque (ID: ${ingrediente.id_estoque}). ` +
+            `Verifique se o item foi cadastrado.`
+          );
+        }
+
+        const dadosEstoque = estoqueDoc.data();
+        const quantidadeAtual = Number(dadosEstoque.quantity) || 0;
+        const qtdGasta = Number(ingrediente.qtd_gasta) || 0;
+
+        // ─── VALIDAÇÃO DE ESTOQUE ────────────────────────────
+        // Se a subtração deixar o estoque negativo, aborta a transação inteira
+        if (quantidadeAtual - qtdGasta < 0) {
+          throw new Error(
+            `Estoque insuficiente para "${dadosEstoque.name || ingrediente.id_estoque}". ` +
+            `Disponível: ${quantidadeAtual} ${dadosEstoque.unit || 'un'} | ` +
+            `Necessário: ${qtdGasta} ${dadosEstoque.unit || 'un'}.`
+          );
+        }
+
+        // Armazena os dados lidos para a fase de escrita
+        leituras.push({
+          ref: estoqueRef,
+          quantidadeAtual,
+          qtdGasta,
+          nome: dadosEstoque.name || ingrediente.id_estoque,
+          unit: dadosEstoque.unit || 'un',
+        });
+      }
+
+      // ─── FASE DE ESCRITA ─────────────────────────────────────
+      // Se chegou até aqui, TODOS os ingredientes têm estoque suficiente.
+
+      // 3a. Salva o cardápio na coleção 'cardapios'
+      const cardapioRef = db.collection('cardapios').doc(); // ID gerado automaticamente
+      transaction.set(cardapioRef, {
+        refeicao:            dadosCardapio.refeicao,
+        descricao:           dadosCardapio.descricao || '',
+        data:                dadosCardapio.data || new Date().toISOString().split('T')[0],
+        ingredientes_usados: dadosCardapio.ingredientes_usados,
+        criadoPor:           uid,
+        criadoEm:            new Date().toISOString(),
+      });
+
+      // 3b. Atualiza (desconta) a quantidade de cada ingrediente no estoque
+      for (const item of leituras) {
+        const novaQuantidade = item.quantidadeAtual - item.qtdGasta;
+        transaction.update(item.ref, {
+          quantity:  novaQuantidade,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      // Se qualquer operação falhar, o Firestore desfaz TUDO automaticamente.
+    });
+  }
+  // ─── SALVAR CARDÁPIO COM DESCONTO ATÔMICO DE ESTOQUE ──────────
+  /**
+   * Salva o cardápio de um dia da semana e desconta ingredientes do estoque.
+   * Usa runTransaction para garantir atomicidade:
+   *   - Se é edição, devolve os ingredientes antigos ao estoque
+   *   - Valida que nenhum ingrediente fica com estoque negativo
+   *   - Salva o novo cardápio e atualiza os estoques
+   *
+   * @param {string} campusId
+   * @param {number} year
+   * @param {number} week
+   * @param {string} dayKey - 'monday' | 'tuesday' | ... | 'friday'
+   * @param {object} meals - { morning_break: [{id, name, qty, unit}, ...], ... }
+   * @param {string} uid
+   */
+  async function saveMenuWithStock(campusId, year, week, dayKey, meals, uid) {
+    await requireNutritionist(uid);
+    const docId = `${campusId}_${year}_W${String(week).padStart(2, '0')}`;
+    const MEAL_KEYS_LOCAL = ['morning_break', 'lunch', 'afternoon_break', 'dinner', 'evening_break'];
+
+    // Agrega ingredientes novos: soma qtd por ID (mesmo item pode aparecer em refeições distintas)
+    const newIngredients = {};
+    MEAL_KEYS_LOCAL.forEach(mk => {
+      const items = meals[mk];
+      if (Array.isArray(items)) {
+        items.forEach(item => {
+          const qty = Number(item.qty) || 0;
+          if (qty > 0 && item.id) {
+            if (!newIngredients[item.id]) newIngredients[item.id] = { totalQty: 0 };
+            newIngredients[item.id].totalQty += qty;
+          }
+        });
+      }
+    });
+
+    await db.runTransaction(async (transaction) => {
+      // ── Leituras (obrigatório antes de qualquer escrita) ─────
+
+      // 1. Lê cardápio existente para devolver ingredientes antigos
+      const menuRef = db.collection('menus').doc(docId);
+      const menuDoc = await transaction.get(menuRef);
+
+      const oldIngredients = {};
+      if (menuDoc.exists) {
+        const oldDayData = menuDoc.data()[dayKey];
+        if (oldDayData) {
+          MEAL_KEYS_LOCAL.forEach(mk => {
+            const items = oldDayData[mk];
+            if (Array.isArray(items)) {
+              items.forEach(item => {
+                const qty = Number(item.qty) || 0;
+                if (qty > 0 && item.id) {
+                  if (!oldIngredients[item.id]) oldIngredients[item.id] = { totalQty: 0 };
+                  oldIngredients[item.id].totalQty += qty;
+                }
+              });
+            }
+          });
+        }
+      }
+
+      // 2. IDs únicos de todos os ingredientes envolvidos (antigos + novos)
+      const allIds = new Set([...Object.keys(newIngredients), ...Object.keys(oldIngredients)]);
+      const inventoryReads = {};
+
+      for (const id of allIds) {
+        const ref = db.collection('inventory').doc(id);
+        const doc = await transaction.get(ref);
+        if (!doc.exists) throw new Error(`Ingrediente não encontrado no estoque (ID: ${id}).`);
+        inventoryReads[id] = { ref, data: doc.data() };
+      }
+
+      // ── Validação ───────────────────────────────────────────
+      for (const id of allIds) {
+        const current  = Number(inventoryReads[id].data.quantity) || 0;
+        const toReturn = oldIngredients[id]?.totalQty || 0;
+        const toDeduct = newIngredients[id]?.totalQty || 0;
+        const finalQty = current + toReturn - toDeduct;
+
+        if (finalQty < 0) {
+          const name = inventoryReads[id].data.name || id;
+          const unit = inventoryReads[id].data.unit || 'un';
+          throw new Error(
+            `Estoque insuficiente para "${name}". ` +
+            `Disponível: ${current + toReturn} ${unit} | Necessário: ${toDeduct} ${unit}.`
+          );
+        }
+      }
+
+      // ── Escritas ────────────────────────────────────────────
+
+      // 3a. Salva/atualiza o cardápio (merge)
+      const baseData = menuDoc.exists ? menuDoc.data() : { campusId, year: Number(year), week: Number(week) };
+      baseData[dayKey] = meals;
+      transaction.set(menuRef, baseData);
+
+      // 3b. Atualiza estoque de cada ingrediente
+      const now = new Date().toISOString();
+      for (const id of allIds) {
+        const current  = Number(inventoryReads[id].data.quantity) || 0;
+        const toReturn = oldIngredients[id]?.totalQty || 0;
+        const toDeduct = newIngredients[id]?.totalQty || 0;
+        const finalQty = current + toReturn - toDeduct;
+
+        transaction.update(inventoryReads[id].ref, { quantity: finalQty, updatedAt: now });
+      }
+    });
+  }
+
+  /**
+   * Salva cardápio de data específica com desconto de estoque.
+   * @param {string} campusId
+   * @param {string} dateStr - 'YYYY-MM-DD'
+   * @param {object} meals - { morning_break: [{id, name, qty, unit}, ...], ... }
+   * @param {string} uid
+   */
+  async function saveDayMenuWithStock(campusId, dateStr, meals, uid) {
+    await requireNutritionist(uid);
+    const docId = `specific_${campusId}_${dateStr}`;
+    const MEAL_KEYS_LOCAL = ['morning_break', 'lunch', 'afternoon_break', 'dinner', 'evening_break'];
+
+    const newIngredients = {};
+    MEAL_KEYS_LOCAL.forEach(mk => {
+      const items = meals[mk];
+      if (Array.isArray(items)) {
+        items.forEach(item => {
+          const qty = Number(item.qty) || 0;
+          if (qty > 0 && item.id) {
+            if (!newIngredients[item.id]) newIngredients[item.id] = { totalQty: 0 };
+            newIngredients[item.id].totalQty += qty;
+          }
+        });
+      }
+    });
+
+    await db.runTransaction(async (transaction) => {
+      const menuRef = db.collection('menus').doc(docId);
+      const menuDoc = await transaction.get(menuRef);
+
+      const oldIngredients = {};
+      if (menuDoc.exists) {
+        const oldData = menuDoc.data();
+        MEAL_KEYS_LOCAL.forEach(mk => {
+          const items = oldData[mk];
+          if (Array.isArray(items)) {
+            items.forEach(item => {
+              const qty = Number(item.qty) || 0;
+              if (qty > 0 && item.id) {
+                if (!oldIngredients[item.id]) oldIngredients[item.id] = { totalQty: 0 };
+                oldIngredients[item.id].totalQty += qty;
+              }
+            });
+          }
+        });
+      }
+
+      const allIds = new Set([...Object.keys(newIngredients), ...Object.keys(oldIngredients)]);
+      const inventoryReads = {};
+      for (const id of allIds) {
+        const ref = db.collection('inventory').doc(id);
+        const doc = await transaction.get(ref);
+        if (!doc.exists) throw new Error(`Ingrediente não encontrado no estoque (ID: ${id}).`);
+        inventoryReads[id] = { ref, data: doc.data() };
+      }
+
+      for (const id of allIds) {
+        const current  = Number(inventoryReads[id].data.quantity) || 0;
+        const toReturn = oldIngredients[id]?.totalQty || 0;
+        const toDeduct = newIngredients[id]?.totalQty || 0;
+        if (current + toReturn - toDeduct < 0) {
+          const name = inventoryReads[id].data.name || id;
+          const unit = inventoryReads[id].data.unit || 'un';
+          throw new Error(
+            `Estoque insuficiente para "${name}". Disponível: ${current + toReturn} ${unit} | Necessário: ${toDeduct} ${unit}.`
+          );
+        }
+      }
+
+      transaction.set(menuRef, {
+        campusId, specific: true, date: dateStr,
+        ...meals,
+      });
+
+      const now = new Date().toISOString();
+      for (const id of allIds) {
+        const current  = Number(inventoryReads[id].data.quantity) || 0;
+        const toReturn = oldIngredients[id]?.totalQty || 0;
+        const toDeduct = newIngredients[id]?.totalQty || 0;
+        transaction.update(inventoryReads[id].ref, {
+          quantity: current + toReturn - toDeduct,
+          updatedAt: now,
+        });
+      }
+    });
+  }
+
+
   return {
     // Acesso
     requireNutritionist,
@@ -582,6 +893,10 @@ const DataService = (() => {
     // Estoque
     getInventory, addInventoryItem, updateInventoryItem, deleteInventoryItem,
     INVENTORY_CATEGORIES, INVENTORY_UNITS,
+    // Cardápio com desconto atômico de estoque
+    salvarCardapioComDesconto,
+    saveMenuWithStock,
+    saveDayMenuWithStock,
     // Utils
     seedInitialData, getISOWeekInfo, getWeekDates,
   };

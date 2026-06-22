@@ -15,6 +15,7 @@
   let menuYear      = null;
   let menuWeek      = null;
   let menuData      = {};
+  let _menuInventoryItems = [];  // itens do estoque para o seletor de ingredientes
 
   // ─── TIMEOUT DE SESSÃO ─────────────────────────────────────────
   // Desloga a nutricionista automaticamente após INACTIVITY_LIMIT ms de inatividade.
@@ -593,6 +594,14 @@
       initWeekEditor();
     });
 
+    // Carrega itens do estoque para o seletor de ingredientes
+    try {
+      _menuInventoryItems = await DataService.getInventory(currentUser.uid);
+    } catch (e) {
+      console.error('Erro ao carregar estoque para seletor:', e);
+      _menuInventoryItems = [];
+    }
+
     // Inicializa o editor e o CRUD automaticamente
     initWeekEditor();
     loadMenusCrud();
@@ -605,11 +614,11 @@
     const dates    = DataService.getWeekDates(menuYear, menuWeek);
     const tabsEl   = document.getElementById('day-tabs');
     const panelsEl = document.getElementById('day-panels');
-    tabsEl.innerHTML   = '';
-    panelsEl.innerHTML = '';
-
     // Busca cardápio existente — passa uid para validação server-side
     const existing = await DataService.getMenu(menuCampusId, menuYear, menuWeek, currentUser.uid);
+
+    tabsEl.innerHTML   = '';
+    panelsEl.innerHTML = '';
     menuData = {};
 
     // Ícones SVG por tipo de refeição (UI/UX Pro Max: no-emoji-icons)
@@ -628,11 +637,23 @@
       evening_break:   'Ex: Leite quente, bolachas',
     };
 
+    // Gera opções do select de ingredientes uma vez
+    const _ingredientOptions = _menuInventoryItems.map(item =>
+      `<option value="${item.id}" data-unit="${_escHtml(item.unit)}">${_escHtml(item.name)} (${item.quantity} ${_escHtml(item.unit)} disp.)</option>`
+    ).join('');
+
     DAY_KEYS.forEach((dayKey, i) => {
       const date    = dates[i];
       const dayData = existing?.[dayKey] ?? {};
-      menuData[dayKey] = { ...dayData };
-      const hasData = Object.values(dayData).some(v => v?.trim());
+
+      // Inicializa menuData com arrays (novo formato)
+      menuData[dayKey] = {};
+      MEAL_KEYS.forEach(mk => {
+        const val = dayData[mk];
+        menuData[dayKey][mk] = Array.isArray(val) ? val.map(v => ({...v})) : [];
+      });
+
+      const hasData = MEAL_KEYS.some(mk => menuData[dayKey][mk].length > 0);
 
       // Tab
       const tab       = document.createElement('button');
@@ -643,7 +664,6 @@
       tabsEl.appendChild(tab);
 
       // Panel
-
       const panel     = document.createElement('div');
       panel.className = `day-panel${i === 0 ? ' active' : ''}`;
       panel.id        = `panel-${dayKey}`;
@@ -656,21 +676,30 @@
                   <div class="meal-form-icon">${MEAL_SVGS[mk]}</div>
                   ${MEAL_LABELS[mi]}
                 </div>
-                <span class="meal-filled-badge" id="badge-${dayKey}-${mk}">
+                <span class="meal-filled-badge" id="badge-${dayKey}-${mk}" style="display:none">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                  Preenchido
+                  <span class="badge-count">0 itens</span>
                 </span>
               </div>
               <div class="meal-form-body">
-                <textarea
-                  id="meal-${dayKey}-${mk}"
-                  placeholder="${MEAL_HELPERS[mk]}"
-                  rows="3"
-                  aria-label="${MEAL_LABELS[mi]}"
-                >${_escHtml(dayData[mk] || '')}</textarea>
-                <div class="meal-form-footer">
-                  <span class="meal-helper-text">${MEAL_HELPERS[mk]}</span>
-                  <span class="meal-char-count" id="count-${dayKey}-${mk}">0 caracteres</span>
+                <div class="ingredient-chips" id="chips-${dayKey}-${mk}"></div>
+                <div class="ingredient-add-row">
+                  <select id="sel-${dayKey}-${mk}" class="ingredient-select" aria-label="Selecionar ingrediente para ${MEAL_LABELS[mi]}">
+                    <option value="">Selecione um item do estoque...</option>
+                    ${_ingredientOptions}
+                  </select>
+                  <div class="ingredient-qty-wrap">
+                    <input type="number" id="qty-${dayKey}-${mk}" class="ingredient-qty"
+                           placeholder="Qtd" step="0.1" min="0.1" aria-label="Quantidade">
+                    <span class="ingredient-unit" id="unit-${dayKey}-${mk}"></span>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-primary ingredient-add-btn"
+                          onclick="addIngredient('${dayKey}','${mk}')" aria-label="Adicionar ingrediente">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+                      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    Adicionar
+                  </button>
                 </div>
               </div>
             </div>
@@ -692,19 +721,17 @@
       `;
       panelsEl.appendChild(panel);
 
-      // Inicializa char counter + badge "Preenchido" para cada textarea
+      // Inicializa: mostra unidade ao selecionar item + renderiza chips existentes
       MEAL_KEYS.forEach(mk => {
-        const ta    = panel.querySelector(`#meal-${dayKey}-${mk}`);
-        const count = panel.querySelector(`#count-${dayKey}-${mk}`);
-        const badge = panel.querySelector(`#badge-${dayKey}-${mk}`);
-        if (!ta) return;
-        const update = () => {
-          const len = ta.value.length;
-          if (count) count.textContent = `${len} caractere${len !== 1 ? 's' : ''}`;
-          if (badge) badge.style.display = ta.value.trim() ? 'inline-flex' : 'none';
-        };
-        ta.addEventListener('input', update);
-        update(); // estado inicial
+        const selectEl = panel.querySelector(`#sel-${dayKey}-${mk}`);
+        const unitEl   = panel.querySelector(`#unit-${dayKey}-${mk}`);
+        if (selectEl) {
+          selectEl.addEventListener('change', () => {
+            const item = _menuInventoryItems.find(it => it.id === selectEl.value);
+            if (unitEl) unitEl.textContent = item ? item.unit : '';
+          });
+        }
+        _renderMealChips(dayKey, mk);
       });
     });
 
@@ -721,37 +748,50 @@
 
   window.saveDayMenu = async (dayKey) => {
     if (!menuCampusId || !isNutritionist()) return;
+
+    // Monta o objeto de refeições a partir do menuData (arrays de ingredientes)
     const meals = {};
     MEAL_KEYS.forEach(mk => {
-      const el    = document.getElementById(`meal-${dayKey}-${mk}`);
-      meals[mk]   = el ? el.value.trim() : '';
+      meals[mk] = Array.isArray(menuData[dayKey]?.[mk]) ? menuData[dayKey][mk] : [];
     });
 
-    // ── Heurística Nielsen #5: Prevenção de Erros ──────────────
-    // Se TODOS os campos estão em branco, pede confirmação antes de salvar
-    const allBlank = MEAL_KEYS.every(mk => !meals[mk]);
-    if (allBlank) {
+    // Prevenção de erros: se todos vazios, confirma
+    const allEmpty = MEAL_KEYS.every(mk => meals[mk].length === 0);
+    if (allEmpty) {
       const dayLabel = DAY_LABELS[DAY_KEYS.indexOf(dayKey)] || dayKey;
-      if (!confirm(`Todos os campos de "${dayLabel}" estão em branco.\nDeseja salvar mesmo assim? Isso apagará o conteúdo existente para este dia.`)) {
+      if (!confirm(`Nenhum ingrediente selecionado em "${dayLabel}".\nDeseja salvar mesmo assim? Isso apagará o conteúdo existente para este dia.`)) {
         return;
       }
     }
-    // Loading state no botão
+
+    // Loading state
     const btn = document.getElementById(`btn-save-day-${dayKey}`);
     const SVG_SAVE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`;
     const SVG_SPIN = `<svg class="spin-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 11-18 0"/></svg>`;
-    if (btn) { btn.innerHTML = `${SVG_SPIN} Salvando...`; btn.disabled = true; }
+    if (btn) { btn.innerHTML = `${SVG_SPIN} Salvando e atualizando estoque...`; btn.disabled = true; }
+
     try {
-      await DataService.saveMenu(menuCampusId, menuYear, menuWeek, dayKey, meals, currentUser.uid);
-      menuData[dayKey] = meals;
-      const hasData = Object.values(meals).some(v => v);
+      // Usa a nova função com desconto atômico de estoque
+      await DataService.saveMenuWithStock(menuCampusId, menuYear, menuWeek, dayKey, meals, currentUser.uid);
+
+      const hasData = MEAL_KEYS.some(mk => meals[mk].length > 0);
       const tab = document.querySelector(`.day-tab[data-day="${dayKey}"]`);
       if (tab) { hasData ? tab.classList.add('has-data') : tab.classList.remove('has-data'); }
-      showToast('Cardápio do dia salvo!', 'success');
-      // Atualiza CRUD de semanas e contador do dashboard em segundo plano
-      setTimeout(() => Promise.all([renderWeeksCrud(), loadDashboard()]), 400);
+      showToast('Cardápio salvo e estoque atualizado!', 'success');
+
+      // Recarrega estoque em background para refletir as mudanças
+      setTimeout(async () => {
+        try { _menuInventoryItems = await DataService.getInventory(currentUser.uid); } catch(e) {}
+        Promise.all([renderWeeksCrud(), loadDashboard()]);
+      }, 400);
     } catch (e) {
-      showToast(e.message?.includes('ACCESS_DENIED') ? 'Sem permissão para salvar cardápios.' : 'Erro ao salvar.', 'error');
+      console.error('Erro ao salvar cardápio:', e);
+      const msg = e.message?.includes('Estoque insuficiente')
+        ? e.message
+        : e.message?.includes('ACCESS_DENIED')
+          ? 'Sem permissão para salvar cardápios.'
+          : 'Erro ao salvar: ' + (e.message || '');
+      showToast(msg, 'error');
     } finally {
       if (btn) { btn.innerHTML = `${SVG_SAVE} Salvar cardápio do dia`; btn.disabled = false; }
     }
@@ -833,50 +873,49 @@
    * Após cópia, oferece botão "Desfazer" por 10 segundos (Heurística #3).
    */
   function _doCopyDay(srcKey, targetDayKey) {
-    const srcData    = menuData[srcKey] || {};
-    const allSrcEmpty= MEAL_KEYS.every(mk => !srcData[mk]?.trim());
-    const targetData = {};
+    const srcData = menuData[srcKey] || {};
+    const allSrcEmpty = MEAL_KEYS.every(mk => !Array.isArray(srcData[mk]) || srcData[mk].length === 0);
+
+    // Salva dados atuais do destino para possível undo
+    const previousData = {};
     MEAL_KEYS.forEach(mk => {
-      const el = document.getElementById(`meal-${targetDayKey}-${mk}`);
-      targetData[mk] = el ? el.value : '';
+      previousData[mk] = Array.isArray(menuData[targetDayKey]?.[mk])
+        ? menuData[targetDayKey][mk].map(item => ({...item}))
+        : [];
     });
-    const targetHasData = MEAL_KEYS.some(mk => targetData[mk]?.trim());
+    const targetHasData = MEAL_KEYS.some(mk => previousData[mk].length > 0);
 
     const performCopy = () => {
       MEAL_KEYS.forEach(mk => {
-        const el = document.getElementById(`meal-${targetDayKey}-${mk}`);
-        if (el) {
-          el.value = srcData[mk] || '';
-          el.dispatchEvent(new Event('input'));
-        }
+        menuData[targetDayKey][mk] = Array.isArray(srcData[mk])
+          ? srcData[mk].map(item => ({...item}))
+          : [];
+        _renderMealChips(targetDayKey, mk);
       });
       const srcLabel    = DAY_LABELS[DAY_KEYS.indexOf(srcKey)].split('-')[0];
       const targetLabel = DAY_LABELS[DAY_KEYS.indexOf(targetDayKey)].split('-')[0];
-      _showUndoCopyToast(targetDayKey, targetData, srcLabel, targetLabel);
+      _showUndoCopyToast(targetDayKey, previousData, srcLabel, targetLabel);
     };
 
-    // Origem vazia: confirma via modal
     if (allSrcEmpty) {
       const srcLabel = DAY_LABELS[DAY_KEYS.indexOf(srcKey)];
       _showCopyConfirmModal(
-        `"${srcLabel}" não tem refeições cadastradas.\nDeseja copiar mesmo assim? Isso limpará o dia de destino.`,
+        `"${srcLabel}" não tem ingredientes cadastrados.\nDeseja copiar mesmo assim? Isso limpará o dia de destino.`,
         performCopy
       );
       return;
     }
 
-    // Destino já preenchido: confirma via modal
     if (targetHasData) {
       const srcLabel    = DAY_LABELS[DAY_KEYS.indexOf(srcKey)];
       const targetLabel = DAY_LABELS[DAY_KEYS.indexOf(targetDayKey)];
       _showCopyConfirmModal(
-        `"${targetLabel}" já possui refeições cadastradas.\nAo copiar de "${srcLabel}", os dados existentes serão substituídos.\n\nEsta ação poderá ser desfeita logo após.`,
+        `"${targetLabel}" já possui ingredientes cadastrados.\nAo copiar de "${srcLabel}", os dados existentes serão substituídos.\n\nEsta ação poderá ser desfeita logo após.`,
         performCopy
       );
       return;
     }
 
-    // Sem conflito: copia direto
     performCopy();
   }
 
@@ -924,10 +963,12 @@
         </button>
       `;
       toast.querySelector('.toast-undo-btn').addEventListener('click', () => {
-        // Restaura os dados anteriores nos campos
+        // Restaura os dados anteriores (arrays de ingredientes)
         MEAL_KEYS.forEach(mk => {
-          const el = document.getElementById(`meal-${targetDayKey}-${mk}`);
-          if (el) { el.value = previousData[mk] || ''; el.dispatchEvent(new Event('input')); }
+          menuData[targetDayKey][mk] = Array.isArray(previousData[mk])
+            ? previousData[mk].map(item => ({...item}))
+            : [];
+          _renderMealChips(targetDayKey, mk);
         });
         clearInterval(countdown);
         toast.remove();
@@ -952,11 +993,124 @@
   }
 
 
-  window.refreshWeekEditor = () => {
+  window.refreshWeekEditor = async () => {
     if (!menuCampusId) { showToast('Selecione um campus primeiro.', 'warning'); return; }
+    // Recarrega inventário antes de recarregar o editor
+    try { _menuInventoryItems = await DataService.getInventory(currentUser.uid); } catch(e) {}
     initWeekEditor();
     showToast('Área de preenchimento recarregada.', 'success');
   };
+
+  // ─── FUNÇÕES DO SELETOR DE INGREDIENTES ─────────────────────
+
+  /**
+   * Renderiza os chips de ingredientes selecionados para uma refeição.
+   */
+  function _renderMealChips(dayKey, mealKey) {
+    const chipsEl = document.getElementById(`chips-${dayKey}-${mealKey}`);
+    if (!chipsEl) return;
+    const items = menuData[dayKey]?.[mealKey] || [];
+
+    if (!items.length) {
+      chipsEl.innerHTML = '<div class="ingredient-empty">Nenhum ingrediente selecionado</div>';
+    } else {
+      chipsEl.innerHTML = items.map((item, idx) => `
+        <div class="ingredient-chip">
+          <span class="chip-name">${_escHtml(item.name)}</span>
+          <span class="chip-qty">${item.qty} ${_escHtml(item.unit)}</span>
+          <button type="button" class="chip-remove" onclick="removeIngredient('${dayKey}','${mealKey}',${idx})"
+                  aria-label="Remover ${_escHtml(item.name)}">×</button>
+        </div>
+      `).join('');
+    }
+
+    // Atualiza badge de contagem
+    const badge = document.getElementById(`badge-${dayKey}-${mealKey}`);
+    if (badge) {
+      badge.style.display = items.length ? 'inline-flex' : 'none';
+      const countEl = badge.querySelector('.badge-count');
+      if (countEl) countEl.textContent = `${items.length} ${items.length === 1 ? 'item' : 'itens'}`;
+    }
+  }
+
+  /**
+   * Adiciona um ingrediente do estoque a uma refeição.
+   */
+  window.addIngredient = function(dayKey, mealKey) {
+    const selectEl = document.getElementById(`sel-${dayKey}-${mealKey}`);
+    const qtyEl    = document.getElementById(`qty-${dayKey}-${mealKey}`);
+    if (!selectEl || !qtyEl) return;
+
+    const itemId = selectEl.value;
+    const qty    = parseFloat(qtyEl.value);
+
+    if (!itemId) { showToast('Selecione um item do estoque.', 'warning'); return; }
+    if (!qty || qty <= 0) { showToast('Informe uma quantidade válida.', 'warning'); return; }
+
+    // Busca dados do item no cache de inventário
+    const invItem = _menuInventoryItems.find(i => i.id === itemId);
+    if (!invItem) { showToast('Item não encontrado no estoque.', 'error'); return; }
+
+    if (qty > invItem.quantity) {
+      showToast(`Estoque insuficiente. Disponível: ${invItem.quantity} ${invItem.unit}.`, 'warning');
+      return;
+    }
+
+    // Verifica se já está na lista (permite duplicata somando qty)
+    if (!menuData[dayKey]) menuData[dayKey] = {};
+    if (!Array.isArray(menuData[dayKey][mealKey])) menuData[dayKey][mealKey] = [];
+
+    const existing = menuData[dayKey][mealKey].find(i => i.id === itemId);
+    if (existing) {
+      existing.qty += qty;
+    } else {
+      menuData[dayKey][mealKey].push({
+        id:   invItem.id,
+        name: invItem.name,
+        qty:  qty,
+        unit: invItem.unit,
+      });
+    }
+
+    // Deduz do cache local e atualiza UI
+    invItem.quantity -= qty;
+    _updateIngredientOptions();
+
+    // Re-renderiza chips
+    _renderMealChips(dayKey, mealKey);
+
+    // Limpa campos
+    selectEl.value = '';
+    qtyEl.value = '';
+    const unitEl = document.getElementById(`unit-${dayKey}-${mealKey}`);
+    if (unitEl) unitEl.textContent = '';
+  };
+
+  /**
+   * Remove um ingrediente de uma refeição pelo índice.
+   */
+  window.removeIngredient = function(dayKey, mealKey, idx) {
+    if (!menuData[dayKey]?.[mealKey]) return;
+    const item = menuData[dayKey][mealKey][idx];
+    const invItem = _menuInventoryItems.find(i => i.id === item.id);
+    if (invItem) {
+      invItem.quantity += item.qty;
+      _updateIngredientOptions();
+    }
+    menuData[dayKey][mealKey].splice(idx, 1);
+    _renderMealChips(dayKey, mealKey);
+  };
+
+  /**
+   * Atualiza o texto das opções de select de ingredientes com a quantidade disponível atual
+   */
+  function _updateIngredientOptions() {
+    _menuInventoryItems.forEach(item => {
+      document.querySelectorAll(`option[value="${item.id}"]`).forEach(opt => {
+        opt.textContent = `${item.name} (${item.quantity} ${item.unit} disp.)`;
+      });
+    });
+  }
 
   // "Salvar Semana Toda" removido — cada dia é salvo individualmente via saveDayMenu()
 
@@ -967,28 +1121,143 @@
     populateSpecificDateModal();
   });
 
+  // Estado temporário para cardápio de data específica
+  let _specificMenuData = {};
+
   function populateSpecificDateModal() {
     const today   = new Date();
     const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
     document.getElementById('specific-date-input').value = dateStr;
+
+    // Inicializa estado temporário
+    _specificMenuData = {};
+    MEAL_KEYS.forEach(mk => { _specificMenuData[mk] = []; });
+
+    const _ingredientOptions = _menuInventoryItems.map(item =>
+      `<option value="${item.id}" data-unit="${_escHtml(item.unit)}">${_escHtml(item.name)} (${item.quantity} ${_escHtml(item.unit)} disp.)</option>`
+    ).join('');
+
+    const MEAL_SVGS_LOCAL = {
+      morning_break: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>`,
+      lunch: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>`,
+      afternoon_break: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/></svg>`,
+      dinner: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>`,
+      evening_break: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>`,
+    };
 
     const formEl = document.getElementById('specific-meals-form');
     formEl.innerHTML = MEAL_KEYS.map((mk, mi) => `
       <div class="meal-form-card" data-meal="${mk}">
         <div class="meal-form-header">
           <div class="meal-form-label">
-            <div class="meal-form-icon">${MEAL_SVGS[mk]}</div>
+            <div class="meal-form-icon">${MEAL_SVGS_LOCAL[mk]}</div>
             ${MEAL_LABELS[mi]}
           </div>
+          <span class="meal-filled-badge" id="badge-specific-${mk}" style="display:none">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="badge-count">0 itens</span>
+          </span>
         </div>
         <div class="meal-form-body">
-          <textarea id="specific-${mk}" placeholder="${MEAL_HELPERS[mk]}" rows="2" aria-label="${MEAL_LABELS[mi]}"></textarea>
-          <div class="meal-form-footer">
-            <span class="meal-helper-text">${MEAL_HELPERS[mk]}</span>
+          <div class="ingredient-chips" id="chips-specific-${mk}"></div>
+          <div class="ingredient-add-row">
+            <select id="sel-specific-${mk}" class="ingredient-select" aria-label="Selecionar ingrediente">
+              <option value="">Selecione um item do estoque...</option>
+              ${_ingredientOptions}
+            </select>
+            <div class="ingredient-qty-wrap">
+              <input type="number" id="qty-specific-${mk}" class="ingredient-qty" placeholder="Qtd" step="0.1" min="0.1">
+              <span class="ingredient-unit" id="unit-specific-${mk}"></span>
+            </div>
+            <button type="button" class="btn btn-sm btn-primary ingredient-add-btn"
+                    onclick="addSpecificIngredient('${mk}')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Adicionar
+            </button>
           </div>
         </div>
       </div>
     `).join('');
+
+    // Event listeners para mostrar unidade
+    MEAL_KEYS.forEach(mk => {
+      const selectEl = document.getElementById(`sel-specific-${mk}`);
+      const unitEl   = document.getElementById(`unit-specific-${mk}`);
+      if (selectEl) {
+        selectEl.addEventListener('change', () => {
+          const item = _menuInventoryItems.find(it => it.id === selectEl.value);
+          if (unitEl) unitEl.textContent = item ? item.unit : '';
+        });
+      }
+      _renderSpecificChips(mk);
+    });
+  }
+
+  function _renderSpecificChips(mealKey) {
+    const chipsEl = document.getElementById(`chips-specific-${mealKey}`);
+    if (!chipsEl) return;
+    const items = _specificMenuData[mealKey] || [];
+    if (!items.length) {
+      chipsEl.innerHTML = '<div class="ingredient-empty">Nenhum ingrediente selecionado</div>';
+    } else {
+      chipsEl.innerHTML = items.map((item, idx) => `
+        <div class="ingredient-chip">
+          <span class="chip-name">${_escHtml(item.name)}</span>
+          <span class="chip-qty">${item.qty} ${_escHtml(item.unit)}</span>
+          <button type="button" class="chip-remove" onclick="removeSpecificIngredient('${mealKey}',${idx})" aria-label="Remover">×</button>
+        </div>
+      `).join('');
+    }
+    const badge = document.getElementById(`badge-specific-${mealKey}`);
+    if (badge) {
+      badge.style.display = items.length ? 'inline-flex' : 'none';
+      const countEl = badge.querySelector('.badge-count');
+      if (countEl) countEl.textContent = `${items.length} ${items.length === 1 ? 'item' : 'itens'}`;
+    }
+  }
+
+  window.addSpecificIngredient = function(mealKey) {
+    const selectEl = document.getElementById(`sel-specific-${mealKey}`);
+    const qtyEl    = document.getElementById(`qty-specific-${mealKey}`);
+    if (!selectEl || !qtyEl) return;
+    const itemId = selectEl.value;
+    const qty    = parseFloat(qtyEl.value);
+    if (!itemId) { showToast('Selecione um item.', 'warning'); return; }
+    if (!qty || qty <= 0) { showToast('Informe uma quantidade válida.', 'warning'); return; }
+    const invItem = _menuInventoryItems.find(i => i.id === itemId);
+    if (!invItem) return;
+
+    if (qty > invItem.quantity) {
+      showToast(`Estoque insuficiente. Disponível: ${invItem.quantity} ${invItem.unit}.`, 'warning');
+      return;
+    }
+
+    if (!_specificMenuData[mealKey]) _specificMenuData[mealKey] = [];
+    const existing = _specificMenuData[mealKey].find(i => i.id === itemId);
+    if (existing) { existing.qty += qty; } else {
+      _specificMenuData[mealKey].push({ id: invItem.id, name: invItem.name, qty, unit: invItem.unit });
+    }
+
+    // Atualiza estoque na UI
+    invItem.quantity -= qty;
+    _updateIngredientOptions();
+
+    _renderSpecificChips(mealKey);
+    selectEl.value = ''; qtyEl.value = '';
+    const unitEl = document.getElementById(`unit-specific-${mealKey}`);
+    if (unitEl) unitEl.textContent = '';
+  };
+
+  window.removeSpecificIngredient = function(mealKey, idx) {
+    if (!_specificMenuData[mealKey]) return;
+    const item = _specificMenuData[mealKey][idx];
+    const invItem = _menuInventoryItems.find(i => i.id === item.id);
+    if (invItem) {
+      invItem.quantity += item.qty;
+      _updateIngredientOptions();
+    }
+    _specificMenuData[mealKey].splice(idx, 1);
+    _renderSpecificChips(mealKey);
   }
 
   document.getElementById('form-specific-date').addEventListener('submit', async e => {
@@ -996,16 +1265,32 @@
     if (!menuCampusId) { showToast('Selecione um campus primeiro.', 'warning'); return; }
     if (!isNutritionist()) { showToast('Sem permissão.', 'error'); return; }
     const dateStr = document.getElementById('specific-date-input').value;
-    const meals   = {};
+
+    // Monta meals a partir do estado temporário
+    const meals = {};
     MEAL_KEYS.forEach(mk => {
-      meals[mk] = document.getElementById(`specific-${mk}`)?.value.trim() || '';
+      meals[mk] = Array.isArray(_specificMenuData[mk]) ? _specificMenuData[mk] : [];
     });
+
+    const btn = e.target.querySelector('button[type=submit]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+
     try {
-      await DataService.saveDayMenu(menuCampusId, dateStr, meals, currentUser.uid);
+      await DataService.saveDayMenuWithStock(menuCampusId, dateStr, meals, currentUser.uid);
       closeModal('modal-specific-date');
-      showToast('Cardápio especial salvo!', 'success');
+      showToast('Cardápio especial salvo e estoque atualizado!', 'success');
+      // Recarrega estoque
+      setTimeout(async () => {
+        try { _menuInventoryItems = await DataService.getInventory(currentUser.uid); } catch(e) {}
+        loadDashboard();
+      }, 300);
     } catch (e) {
-      showToast(e.message?.includes('ACCESS_DENIED') ? 'Sem permissão.' : 'Erro ao salvar.', 'error');
+      const msg = e.message?.includes('Estoque insuficiente')
+        ? e.message
+        : e.message?.includes('ACCESS_DENIED') ? 'Sem permissão.' : 'Erro ao salvar.';
+      showToast(msg, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Salvar Cardápio'; }
     }
   });
   // ─── CRUD DE CARDÁPIOS ─────────────────────────────────────
