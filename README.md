@@ -96,3 +96,9 @@ O projeto foi estruturado seguindo os princípios de separação de responsabili
 * **Controller (Controlador):**
   * Gerenciado pelos scripts principais de lógica de interface (`js/app.js` para a área do aluno e `js/admin.js` para a área da nutricionista).
   * Interceptam eventos de interação do usuário (cliques, formulários, seleção de filtros), coordenam a solicitação de informações ao **Model** e atualizam dinamicamente a interface gráfica (**Template / View**) através de manipulação do DOM.
+
+---
+
+## 🤖 5. Declaração de Uso Responsável de IA
+
+Este projeto foi desenvolvido com o auxílio de ferramentas de Inteligência Artificial (IA) para otimização de código, documentação e sugestões de implementação. Reforçamos que o uso da IA ocorreu de forma estritamente assistencial. Todas as decisões de arquitetura, design, segurança e regras de negócio foram ativamente supervisionadas, revisadas e validadas pelos desenvolvedores humanos responsáveis, garantindo a integridade, confiabilidade e o uso ético da tecnologia no desenvolvimento desta aplicação.
