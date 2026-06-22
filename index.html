@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Cardápio digital da escola — consulte o cardápio do dia por campus." />
+  <title>Cardápio Escolar — IFRO</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='28'>🍽️</text></svg>" />
+  <link rel="stylesheet" href="css/style.css" />
+
+  <!-- Firebase Compat SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+  <!-- =========================================================
+       CABEÇALHO
+  ========================================================== -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="header-logo">🍽️</div>
+      <div class="header-text">
+        <h1>Cardápio Escolar</h1>
+        <p>IFRO Campus Ariquemes</p>
+      </div>
+      <div class="header-badge" id="today-badge">—</div>
+    </div>
+  </header>
+
+  <!-- =========================================================
+       SELEÇÃO DE ESTADO E CAMPUS (oculto — campus fixo Ariquemes)
+  ========================================================== -->
+  <section class="selection-section" style="display:none">
+    <div class="selection-inner">
+      <div class="selection-title">
+        📍 Onde você estuda?
+      </div>
+      <div class="selection-grid">
+        <div class="select-group">
+          <label for="state-select">Estado</label>
+          <select id="state-select" aria-label="Selecione o estado">
+            <option value="">Selecione o Estado</option>
+          </select>
+        </div>
+        <div class="select-group">
+          <label for="campus-select">Campus</label>
+          <select id="campus-select" aria-label="Selecione o campus" disabled>
+            <option value="">Selecione o Campus</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================
+       NAVEGAÇÃO DE SEMANA
+  ========================================================== -->
+  <nav class="week-nav" id="week-nav" style="display:none" aria-label="Navegação de semana">
+    <div class="week-title" id="week-title">—</div>
+    <div class="week-nav-row">
+      <button class="week-arrow-btn" id="btn-prev-week" aria-label="Semana anterior">‹</button>
+      <div class="days-strip" id="days-strip" role="tablist"></div>
+      <button class="week-arrow-btn" id="btn-next-week" aria-label="Próxima semana">›</button>
+    </div>
+  </nav>
+
+  <!-- =========================================================
+       CONTEÚDO PRINCIPAL
+  ========================================================== -->
+  <main>
+    <!-- Prompt inicial (antes de selecionar campus) -->
+    <div id="main-content" style="max-width:1100px;margin:0 auto;padding:0 24px 60px"></div>
+
+    <!-- Seção de cardápio (aparece após selecionar campus) -->
+    <section class="menu-section" id="menu-section" style="display:none">
+      <div class="menu-header">
+        <div class="menu-date-label" id="menu-date-label">—</div>
+      </div>
+      <div class="meals-grid" id="meals-grid"></div>
+    </section>
+  </main>
+
+  <!-- =========================================================
+       TOAST CONTAINER
+  ========================================================== -->
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <!-- Link para o admin -->
+  <div style="text-align:center;padding:20px 0 40px;color:var(--color-text-muted);font-size:0.8rem">
+    <a href="admin.html" style="color:var(--color-primary);text-decoration:none;font-weight:600">
+      🔒 Acesso da Nutricionista
+    </a>
+  </div>
+
+  <!-- Scripts -->
+  <script>
+    // Atualiza badge com a data de hoje
+    const todayBadge = document.getElementById('today-badge');
+    const now = new Date();
+    const days = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    todayBadge.textContent = `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]}`;
+  </script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

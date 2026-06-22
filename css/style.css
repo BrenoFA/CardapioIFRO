@@ -1,0 +1,580 @@
+/* ============================================================
+   DESIGN SYSTEM — CARDÁPIO ESCOLAR (TELA DO ALUNO)
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Nunito:wght@400;600;700;800;900&display=swap');
+
+/* ---- TOKENS ---- */
+:root {
+  --color-primary: #2d8653;
+  --color-primary-dark: #1e6b40;
+  --color-primary-light: #4db076;
+  --color-accent: #f5a623;
+  --color-accent-dark: #d4890a;
+  --color-bg: #f0f7f2;
+  --color-surface: #ffffff;
+  --color-surface-2: #e8f5ee;
+  --color-text: #1a2e22;
+  --color-text-muted: #5a7a65;
+  --color-border: #c8e6d2;
+  --color-error: #e05252;
+  --color-shadow: rgba(45, 134, 83, 0.15);
+
+  --meal-morning-break: #ff9a3c;
+  --meal-lunch: #2d8653;
+  --meal-afternoon-break: #9b59b6;
+  --meal-dinner: #2c3e50;
+  --meal-evening-break: #1a6b8a;
+
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-md: 0 8px 24px rgba(0,0,0,0.10);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,0.14);
+
+  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
+  --font-body: 'Inter', sans-serif;
+  --font-display: 'Nunito', sans-serif;
+}
+
+/* ---- RESET ---- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+img { max-width: 100%; display: block; }
+button { cursor: pointer; border: none; background: none; font-family: inherit; }
+select, input { font-family: inherit; }
+
+/* ---- HEADER ---- */
+.app-header {
+  background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 50%, var(--color-primary-light) 100%);
+  padding: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+.header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-logo {
+  width: 48px;
+  height: 48px;
+  background: rgba(255,255,255,0.2);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.3);
+  flex-shrink: 0;
+}
+
+.header-text h1 {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: white;
+  line-height: 1.2;
+}
+
+.header-text p {
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.75);
+  font-weight: 400;
+}
+
+.header-badge {
+  margin-left: auto;
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: white;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+
+/* ---- SELEÇÃO DE ESTADO/CAMPUS ---- */
+.selection-section {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: 24px;
+}
+
+.selection-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.selection-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selection-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.select-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.select-group label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.select-group select {
+  appearance: none;
+  background: var(--color-bg);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px 40px 12px 16px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%232d8653' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  width: 100%;
+}
+
+.select-group select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(45, 134, 83, 0.15);
+}
+
+.select-group select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- NAVEGAÇÃO DE DIAS ---- */
+.week-nav {
+  max-width: 1100px;
+  margin: 28px auto 0;
+  padding: 0 24px;
+}
+
+.week-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.week-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.week-arrow-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.week-arrow-btn:hover {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+  transform: scale(1.1);
+}
+
+.days-strip {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  justify-content: center;
+}
+
+.days-strip::-webkit-scrollbar { display: none; }
+
+.day-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: all var(--transition);
+  min-width: 0;
+}
+
+.day-btn .day-name {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.day-btn .day-num {
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-family: var(--font-display);
+  color: var(--color-text);
+}
+
+.day-btn:hover {
+  border-color: var(--color-primary-light);
+  background: var(--color-surface-2);
+  color: var(--color-primary);
+}
+
+.day-btn.active {
+  background: linear-gradient(135deg, var(--color-primary-dark), var(--color-primary));
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 4px 16px var(--color-shadow);
+}
+
+.day-btn.active .day-num { color: white; }
+
+.day-btn.today::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  display: block;
+}
+
+/* ---- CONTEÚDO PRINCIPAL — CARDÁPIO ---- */
+.menu-section {
+  max-width: 1100px;
+  margin: 28px auto 60px;
+  padding: 0 24px;
+}
+
+.menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.menu-date-label {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.menu-date-label span {
+  color: var(--color-primary);
+}
+
+/* Estado vazio */
+.empty-state {
+  text-align: center;
+  padding: 60px 24px;
+  color: var(--color-text-muted);
+}
+
+.empty-state .empty-icon {
+  font-size: 4rem;
+  margin-bottom: 16px;
+  opacity: 0.4;
+}
+
+.empty-state h2 {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--color-text);
+}
+
+.empty-state p {
+  font-size: 0.9rem;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+/* Prompt para selecionar campus */
+.select-prompt {
+  background: linear-gradient(135deg, var(--color-primary-dark), var(--color-primary-light));
+  border-radius: var(--radius-xl);
+  padding: 48px 32px;
+  text-align: center;
+  color: white;
+  margin-top: 32px;
+}
+
+.select-prompt .prompt-icon { font-size: 3rem; margin-bottom: 16px; }
+.select-prompt h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+.select-prompt p { opacity: 0.85; font-size: 0.95rem; }
+
+/* ---- CARDS DE REFEIÇÃO ---- */
+.meals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.meal-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition), box-shadow var(--transition);
+  border: 1px solid var(--color-border);
+  position: relative;
+}
+
+.meal-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+.meal-card-header {
+  padding: 20px 24px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+}
+
+.meal-card-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 24px;
+  right: 24px;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.meal-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.meal-info { flex: 1; }
+
+.meal-type {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+.meal-name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.meal-time {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.meal-card-body {
+  padding: 18px 24px 24px;
+}
+
+.meal-content {
+  font-size: 0.95rem;
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+.meal-empty-text {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Cores por tipo de refeição */
+.meal-card[data-meal="morning_break"] .meal-icon-wrap {
+  background: rgba(255, 154, 60, 0.15);
+}
+.meal-card[data-meal="morning_break"] .meal-type { color: var(--meal-morning-break); }
+.meal-card[data-meal="morning_break"] .meal-card-header { border-top: 4px solid var(--meal-morning-break); }
+
+.meal-card[data-meal="lunch"] .meal-icon-wrap {
+  background: rgba(45, 134, 83, 0.12);
+}
+.meal-card[data-meal="lunch"] .meal-type { color: var(--meal-lunch); }
+.meal-card[data-meal="lunch"] .meal-card-header { border-top: 4px solid var(--meal-lunch); }
+
+.meal-card[data-meal="afternoon_break"] .meal-icon-wrap {
+  background: rgba(155, 89, 182, 0.12);
+}
+.meal-card[data-meal="afternoon_break"] .meal-type { color: var(--meal-afternoon-break); }
+.meal-card[data-meal="afternoon_break"] .meal-card-header { border-top: 4px solid var(--meal-afternoon-break); }
+
+.meal-card[data-meal="dinner"] .meal-icon-wrap {
+  background: rgba(44, 62, 80, 0.1);
+}
+.meal-card[data-meal="dinner"] .meal-type { color: var(--meal-dinner); }
+.meal-card[data-meal="dinner"] .meal-card-header { border-top: 4px solid var(--meal-dinner); }
+
+.meal-card[data-meal="evening_break"] .meal-icon-wrap {
+  background: rgba(26, 107, 138, 0.12);
+}
+.meal-card[data-meal="evening_break"] .meal-type { color: var(--meal-evening-break); }
+.meal-card[data-meal="evening_break"] .meal-card-header { border-top: 4px solid var(--meal-evening-break); }
+
+/* ---- SKELETON LOADING ---- */
+.skeleton {
+  background: linear-gradient(90deg, #e8f5ee 25%, #f0f7f2 50%, #e8f5ee 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  padding: 24px;
+}
+
+.skeleton-line {
+  height: 14px;
+  margin-bottom: 10px;
+}
+
+/* ---- LOADING SPINNER ---- */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- TOAST NOTIFICATIONS ---- */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toast {
+  background: var(--color-text);
+  color: white;
+  padding: 14px 20px;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: var(--shadow-lg);
+  animation: toast-in 0.3s ease;
+  max-width: 320px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toast.success { background: var(--color-primary-dark); }
+.toast.error { background: var(--color-error); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ---- RESPONSIVIDADE ---- */
+@media (max-width: 768px) {
+  .selection-grid { grid-template-columns: 1fr; }
+  .meals-grid { grid-template-columns: 1fr; }
+  .header-badge { display: none; }
+  .week-title { font-size: 0.95rem; }
+}
+
+@media (max-width: 480px) {
+  .header-inner { padding: 16px; }
+  .selection-section { padding: 16px; }
+  .week-nav, .menu-section { padding: 0 16px; }
+  .meal-card-header, .meal-card-body { padding: 16px; }
+}
