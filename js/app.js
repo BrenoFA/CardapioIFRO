@@ -186,8 +186,7 @@
   /**
    * Renderiza apenas as refeições com conteúdo cadastrado.
    * Cards vazios ou com texto genérico de "não cadastrado" são
-   * completamente omitidos do DOM (Heurística Nielsen #8 — Estética e
-   * Design Minimalista: não exibir informação irrelevante).
+   * completamente omitidos do DOM.
    */
   function renderMeals(data) {
     // ── Sem dados para o dia ──────────────────────────────────
@@ -203,11 +202,14 @@
     }
 
     // ── Filtra apenas refeições com conteúdo real ─────────────
-    const EMPTY_PATTERNS = /^(não cadastrado|nao cadastrado|—|-)(\s.*)?$/i;
+    const EMPTY_PATTERNS = /^(não cadastrado|nao cadastrado|—|-)(\\s.*)?$/i;
 
     const mealsWithContent = MEALS.filter(meal => {
       const content = data[meal.key];
       if (!content) return false;
+      // Novo formato: array de ingredientes
+      if (Array.isArray(content)) return content.length > 0;
+      // Formato antigo: string
       const trimmed = String(content).trim();
       if (!trimmed) return false;
       if (EMPTY_PATTERNS.test(trimmed)) return false;
@@ -228,7 +230,25 @@
 
     // ── Renderiza apenas os cards com conteúdo ────────────────
     mealsGridEl.innerHTML = mealsWithContent.map(meal => {
-      const content = String(data[meal.key]).trim();
+      const content = data[meal.key];
+      let bodyHtml;
+
+      if (Array.isArray(content)) {
+        // Novo formato: lista de ingredientes com quantidade
+        bodyHtml = `<ul class="meal-items-list">
+          ${content.map(item => `
+            <li class="meal-item">
+              <span class="meal-item-dot"></span>
+              <span class="meal-item-name">${escapeHtml(item.name || '')}</span>
+              ${item.qty ? `<span class="meal-item-qty">${item.qty} ${escapeHtml(item.unit || '')}</span>` : ''}
+            </li>
+          `).join('')}
+        </ul>`;
+      } else {
+        // Formato antigo: texto simples
+        bodyHtml = `<p class="meal-content">${escapeHtml(String(content).trim())}</p>`;
+      }
+
       return `
         <div class="meal-card" data-meal="${meal.key}">
           <div class="meal-card-header">
@@ -240,7 +260,7 @@
             </div>
           </div>
           <div class="meal-card-body">
-            <p class="meal-content">${escapeHtml(content)}</p>
+            ${bodyHtml}
           </div>
         </div>
       `;
