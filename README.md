@@ -3,6 +3,7 @@
 Este documento apresenta todas as funcionalidades implementadas no sistema de **Cardápio Escolar** para o **IFRO - Campus Ariquemes**, divididas entre a área pública (aluno) e a área administrativa (nutricionista), além da infraestrutura de segurança e dados.
 
 Desenvolvedores: Breno Amorim, Geovane Alencar, Fernando Gabriel, Matheus Pereira
+
 Pitch: https://drive.google.com/file/d/1PzB1zX3vmxsWKjRMSvAyiiNrgjgnIh81/view?usp=sharing
 ---
 
