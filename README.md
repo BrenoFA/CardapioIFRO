@@ -4,7 +4,7 @@ Este documento apresenta todas as funcionalidades implementadas no sistema de **
 
 Desenvolvedores: Breno Amorim, Geovane Alencar, Fernando Gabriel, Matheus Pereira
 
-Pitch: https://drive.google.com/file/d/1PzB1zX3vmxsWKjRMSvAyiiNrgjgnIh81/view?usp=sharing
+Pitch: https://drive.google.com/file/d/1g832msjFqAx3ggWfpviN4eg08vxa16E4/view?usp=sharing
 ---
 
 ## 🍽️ 1. Área Pública (Interface do Aluno / Usuário Comum)
